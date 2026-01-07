@@ -1,0 +1,296 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String           @id @default(uuid()) @db.Uuid
+  name                String
+  email               String           @unique
+  role                UserRole
+  matricNo            String?          @unique
+  program             String?
+  faculty             String?
+  cgpa                Float?           @db.DoublePrecision
+  phone               String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  isActive            Boolean          @default(true)
+  lastLoginAt         DateTime?
+  mfaEnabled          Boolean          @default(false)
+  mfaSecret           String?
+  password            String
+  pdpaConsent         Boolean          @default(false)
+  pdpaConsentAt       DateTime?
+  ssoId               String?
+  ssoProvider         String?
+  tosAccepted         Boolean          @default(false)
+  tosAcceptedAt       DateTime?
+  creditsEarned       Int?
+  applications        Application[]
+  auditLogs           AuditLog[]       @relation("AuditLogActor")
+  eligibilities       Eligibility[]
+  verifiedForms       FormResponse[]   @relation("FormResponseVerifier")
+  notifications       Notification[]
+  refreshTokens       RefreshToken[]
+  reviews             Review[]         @relation("ReviewReviewer")
+  coordinatedSessions Session[]        @relation("SessionCoordinator")
+  studentSessions     StudentSession[]
+
+  @@index([ssoId, ssoProvider])
+}
+
+model Eligibility {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  creditsEarned Int
+  isEligible    Boolean
+  checkedOn     DateTime @default(now())
+  source        String
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model Session {
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String
+  year            Int
+  semester        Int
+  deadlinesJSON   Json?
+  minCredits      Int              @default(113)
+  minWeeks        Int
+  maxWeeks        Int
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  isActive        Boolean          @default(true)
+  coordinatorId   String?          @db.Uuid
+  applications    Application[]
+  coordinator     User?            @relation("SessionCoordinator", fields: [coordinatorId], references: [id])
+  studentSessions StudentSession[]
+
+  @@index([coordinatorId])
+}
+
+model StudentSession {
+  id            String   @id @default(uuid()) @db.Uuid
+  sessionId     String   @db.Uuid
+  userId        String   @db.Uuid
+  creditsEarned Int
+  isEligible    Boolean
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
+  @@index([userId])
+}
+
+model Company {
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String
+  address      String?
+  industry     String?
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  fax          String?
+  applications Application[]
+}
+
+model Application {
+  id                              String            @id @default(uuid()) @db.Uuid
+  userId                          String            @db.Uuid
+  sessionId                       String            @db.Uuid
+  companyId                       String?           @db.Uuid
+  status                          ApplicationStatus
+  startDate                       DateTime?
+  endDate                         DateTime?
+  agreedBeyond14Weeks             Boolean           @default(false)
+  createdAt                       DateTime          @default(now())
+  updatedAt                       DateTime          @updatedAt
+  contactPersonName               String?
+  contactPersonPhone              String?
+  emergencyContactEmail           String?
+  emergencyContactName            String?
+  emergencyContactPhone           String?
+  organizationAddress             String?
+  organizationDeclarationAccepted Boolean           @default(false)
+  organizationEmail               String?
+  organizationFax                 String?
+  organizationName                String?
+  organizationPhone               String?
+  reportingPeriod                 String?
+  roleTasksSummary                String?
+  studentEmail                    String?
+  studentPhone                    String?
+  company                         Company?          @relation(fields: [companyId], references: [id])
+  session                         Session           @relation(fields: [sessionId], references: [id])
+  user                            User              @relation(fields: [userId], references: [id])
+  documents                       Document[]
+  formResponses                   FormResponse[]
+  reviews                         Review[]
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([companyId])
+}
+
+model Document {
+  id                  String         @id @default(uuid()) @db.Uuid
+  applicationId       String         @db.Uuid
+  type                DocumentType
+  fileUrl             String
+  version             Int            @default(1)
+  signedBy            String?
+  signedAt            DateTime?
+  status              DocumentStatus
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  storageType         String         @default("local")
+  driveFileId         String?
+  driveWebViewLink    String?
+  driveWebContentLink String?
+  application         Application    @relation(fields: [applicationId], references: [id])
+
+  @@index([applicationId])
+  @@index([driveFileId])
+}
+
+model FormResponse {
+  id            String      @id @default(uuid()) @db.Uuid
+  applicationId String      @db.Uuid
+  formTypeEnum  String
+  payloadJSON   Json
+  submittedAt   DateTime    @default(now())
+  verifiedBy    String?     @db.Uuid
+  application   Application @relation(fields: [applicationId], references: [id])
+  verifier      User?       @relation("FormResponseVerifier", fields: [verifiedBy], references: [id])
+
+  @@index([applicationId])
+  @@index([verifiedBy])
+}
+
+model Review {
+  id            String      @id @default(uuid()) @db.Uuid
+  applicationId String      @db.Uuid
+  reviewerId    String      @db.Uuid
+  decision      Decision
+  comments      String?
+  decidedAt     DateTime    @default(now())
+  application   Application @relation(fields: [applicationId], references: [id])
+  reviewer      User        @relation("ReviewReviewer", fields: [reviewerId], references: [id])
+
+  @@index([applicationId])
+  @@index([reviewerId])
+}
+
+model Notification {
+  id          String             @id @default(uuid()) @db.Uuid
+  userId      String             @db.Uuid
+  type        String
+  channel     Channel
+  payloadJSON Json
+  sentAt      DateTime?
+  status      NotificationStatus
+  createdAt   DateTime           @default(now())
+  user        User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  actorId      String?  @db.Uuid
+  action       String
+  resourceType String
+  resourceId   String
+  beforeJSON   Json?
+  afterJSON    Json?
+  timestamp    DateTime @default(now())
+  actor        User?    @relation("AuditLogActor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([resourceType, resourceId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  token     String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+enum UserRole {
+  STUDENT
+  COORDINATOR
+  LECTURER
+  ADMIN
+}
+
+enum DocumentType {
+  SLI_01
+  SLI_03
+  SLI_04
+  BLI_02
+  BLI_03
+  BLI_03_HARDCOPY
+  BLI_04
+  DLI_01
+  OFFER_LETTER
+  STUDY_PLAN
+  BLI_01
+}
+
+enum Decision {
+  APPROVE
+  REQUEST_CHANGES
+  REJECT
+}
+
+enum Channel {
+  IN_APP
+  EMAIL
+  WHATSAPP
+  SMS
+}
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum DocumentStatus {
+  DRAFT
+  PENDING_SIGNATURE
+  SIGNED
+  REJECTED
+  CANCELLED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
