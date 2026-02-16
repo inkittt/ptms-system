@@ -8,11 +8,11 @@ import {
   Users,
   FileCheck,
   BarChart3,
-  Settings,
   LogOut,
   GraduationCap,
   FileText,
   Calendar,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -23,7 +23,7 @@ const navigation = [
   { name: "Review Document", href: "/coordinator/document-review", icon: FileText },
   { name: "Students", href: "/coordinator/students", icon: Users },
   { name: "Reports", href: "/coordinator/reports", icon: BarChart3 },
-  { name: "Settings", href: "/coordinator/settings", icon: Settings },
+  { name: "Acknowledgment", href: "/coordinator/acknowledgment", icon: Info },
 ];
 
 export default function CoordinatorLayout({ children }: { children: ReactNode }) {
@@ -42,9 +42,9 @@ export default function CoordinatorLayout({ children }: { children: ReactNode })
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <div className="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 flex flex-col">
         {/* Logo/Brand */}
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
@@ -107,7 +107,7 @@ export default function CoordinatorLayout({ children }: { children: ReactNode })
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="ml-64 flex flex-col min-h-screen">
         {children}
       </div>
     </div>

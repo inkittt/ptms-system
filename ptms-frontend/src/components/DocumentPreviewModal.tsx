@@ -50,15 +50,127 @@ interface DocumentPreviewModalProps {
 export function DocumentPreviewModal({ isOpen, onClose, document }: DocumentPreviewModalProps) {
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!document || !isOpen) {
+      setPdfUrl(null);
+      setError(null);
+      return;
+    }
+
+    const loadPdf = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const token = localStorage.getItem('accessToken');
+        
+        // BLI-02 is an uploaded document, others are generated PDFs
+        const isUploadedDocument = document.type === 'BLI_02';
+        
+        let response;
+        if (isUploadedDocument) {
+          // Use the document download endpoint for uploaded files
+          response = await fetch(
+            `http://localhost:3000/api/applications/documents/${document.id}/download`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+              },
+            }
+          );
+        } else {
+          // Use the PDF generation endpoint for generated documents
+          const documentType = document.type.replace(/_/g, '-').toLowerCase();
+          response = await fetch(
+            `http://localhost:3000/api/applications/${document.application.id}/${documentType}/pdf`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+              },
+            }
+          );
+        }
+
+        if (!response.ok) {
+          throw new Error('Failed to load document');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        setPdfUrl(url);
+      } catch (err) {
+        console.error('Error loading PDF:', err);
+        setError('Failed to load document preview');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadPdf();
+
+    return () => {
+      if (pdfUrl) {
+        window.URL.revokeObjectURL(pdfUrl);
+      }
+    };
+  }, [document, isOpen]);
 
   if (!document) return null;
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 25, 300));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 25, 25));
   const handleRotate = () => setRotation(prev => (prev + 90) % 360);
-  const handleDownload = () => {
-    // Simulate download
-    console.log('Downloading document:', document.id);
+  const handleDownload = async () => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      
+      // BLI-02 is an uploaded document, others are generated PDFs
+      const isUploadedDocument = document.type === 'BLI_02';
+      
+      let response;
+      if (isUploadedDocument) {
+        // Use the document download endpoint for uploaded files
+        response = await fetch(
+          `http://localhost:3000/api/applications/documents/${document.id}/download`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+      } else {
+        // Use the PDF generation endpoint for generated documents
+        const documentType = document.type.replace(/_/g, '-').toLowerCase();
+        response = await fetch(
+          `http://localhost:3000/api/applications/${document.application.id}/${documentType}/pdf`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to download document');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = `${document.type}-${document.application.user.name}.pdf`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      alert('Failed to download document. Please try again.');
+    }
   };
 
   return (
@@ -85,51 +197,49 @@ export function DocumentPreviewModal({ isOpen, onClose, document }: DocumentPrev
         </div>
 
         {/* Document Preview */}
-        <div className="flex-1 bg-gray-100 rounded-lg overflow-hidden">
-          <div className="h-full flex items-center justify-center p-8">
-            <div
-              className="bg-white shadow-lg rounded-lg p-8 max-w-2xl w-full"
-              style={{
-                transform: `scale(${zoom / 100}) rotate(${rotation}deg)`,
-                transformOrigin: 'center center',
-              }}
-            >
-              {/* Mock document content */}
+        <div className="flex-1 bg-gray-100 rounded-lg overflow-hidden" style={{ minHeight: '500px' }}>
+          {isLoading ? (
+            <div className="h-full flex items-center justify-center">
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-800 mb-4">
-                  {document.documentType}
-                </div>
-                <div className="text-gray-600 mb-6">
-                  <p><strong>Student:</strong> {document.student?.name}</p>
-                  <p><strong>Matric No:</strong> {document.student?.matricNo}</p>
-                  <p><strong>Program:</strong> {document.student?.program}</p>
-                  <p><strong>Submitted:</strong> {document.submittedAt ? new Date(document.submittedAt).toLocaleDateString() : 'N/A'}</p>
-                </div>
-                <div className="border-t pt-4">
-                  <p className="text-sm text-gray-500 italic">
-                    This is a preview of the document. In a real implementation,
-                    this would display the actual PDF or image content.
-                  </p>
-                </div>
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading document...</p>
               </div>
             </div>
-          </div>
+          ) : error ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-center text-red-600">
+                <p className="text-lg font-semibold mb-2">Error Loading Document</p>
+                <p className="text-sm">{error}</p>
+              </div>
+            </div>
+          ) : pdfUrl ? (
+            <iframe
+              src={`${pdfUrl}#view=FitH&zoom=${zoom}`}
+              className="w-full h-full"
+              style={{
+                minHeight: '500px',
+                border: 'none',
+              }}
+              title="Document Preview"
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-gray-500">No document to display</p>
+            </div>
+          )}
         </div>
 
         {/* Document Info */}
         <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             <div>
-              <span className="font-medium">File Size:</span> 2.3 MB
+              <span className="font-medium">Student:</span> {document.application?.user?.name || 'N/A'}
             </div>
             <div>
-              <span className="font-medium">Pages:</span> 3
+              <span className="font-medium">Matric No:</span> {document.application?.user?.matricNo || 'N/A'}
             </div>
             <div>
-              <span className="font-medium">Uploaded:</span> {document.submittedAt ? new Date(document.submittedAt).toLocaleDateString() : 'N/A'}
-            </div>
-            <div>
-              <span className="font-medium">Version:</span> 1.0
+              <span className="font-medium">Submitted:</span> {document.createdAt ? new Date(document.createdAt).toLocaleDateString() : 'N/A'}
             </div>
           </div>
         </div>

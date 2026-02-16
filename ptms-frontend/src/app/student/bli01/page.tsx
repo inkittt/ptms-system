@@ -71,7 +71,7 @@ export default function BLI01FormPage() {
 
         if (profile) {
           if (profile.name) setValue('studentName', profile.name);
-          if (profile.phone) setValue('icNo', profile.phone);
+          if (profile.icNumber) setValue('icNo', profile.icNumber);
           if (profile.matricNo) setValue('matricNo', profile.matricNo);
           if (profile.program) setValue('program', profile.program);
           if (profile.assignedSession) {

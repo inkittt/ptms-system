@@ -21,6 +21,14 @@ interface BLI03Data {
         id: string;
         createdAt: Date;
     };
+    signatures?: {
+        studentSignature?: string;
+        studentSignatureType?: 'typed' | 'drawn' | 'image';
+        studentSignedAt?: Date;
+        coordinatorSignature?: string;
+        coordinatorSignatureType?: 'typed' | 'drawn' | 'image';
+        coordinatorSignedAt?: Date;
+    };
 }
 export declare function generateBLI03(data: BLI03Data): Promise<Buffer>;
 export declare function validateBLI03Data(data: BLI03Data): boolean;

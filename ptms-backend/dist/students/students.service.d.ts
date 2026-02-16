@@ -1,7 +1,9 @@
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 export declare class StudentsService {
     private prisma;
-    constructor(prisma: PrismaService);
+    private storageService;
+    constructor(prisma: PrismaService, storageService: StorageService);
     getPrograms(): Promise<string[]>;
     exportStudentsByProgram(program: string): Promise<{
         matricNo: string;
@@ -35,8 +37,10 @@ export declare class StudentsService {
         application: {
             id: any;
             status: any;
+            companyName: any;
             createdAt: any;
             updatedAt: any;
+            documents: any;
         };
     }>;
     getCoordinatorStudents(coordinatorId: string, filters: {

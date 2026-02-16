@@ -14,10 +14,10 @@ export declare class AuthService {
             id: string;
             createdAt: Date;
             name: string;
-            program: string;
             email: string;
             role: import(".prisma/client").$Enums.UserRole;
             matricNo: string;
+            program: string;
             phone: string;
             pdpaConsent: boolean;
             tosAccepted: boolean;

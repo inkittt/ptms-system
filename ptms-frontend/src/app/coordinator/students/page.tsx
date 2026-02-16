@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { studentsApi, CoordinatorStudent } from "@/lib/api/students";
 import { StudentDetailsDialog } from "@/components/coordinator/StudentDetailsDialog";
+import { StudentDocumentsDialog } from "@/components/coordinator/StudentDocumentsDialog";
 
 
 export default function StudentsPage() {
@@ -42,6 +43,7 @@ export default function StudentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [documentsDialogOpen, setDocumentsDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchPrograms();
@@ -213,6 +215,11 @@ export default function StudentsPage() {
     setDetailsDialogOpen(true);
   };
 
+  const handleViewDocuments = (studentId: string) => {
+    setSelectedStudentId(studentId);
+    setDocumentsDialogOpen(true);
+  };
+
   const handleContactStudent = (email: string) => {
     console.log("Contact student:", email);
     // TODO: Open email client or messaging interface
@@ -371,6 +378,7 @@ export default function StudentsPage() {
                       getApplicationStatusBadge={getApplicationStatusBadge}
                       onViewDetails={handleViewDetails}
                       onViewApplications={handleViewApplications}
+                      onViewDocuments={handleViewDocuments}
                       onContactStudent={handleContactStudent}
                     />
                   ))}
@@ -385,6 +393,7 @@ export default function StudentsPage() {
                       getApplicationStatusBadge={getApplicationStatusBadge}
                       onViewDetails={handleViewDetails}
                       onViewApplications={handleViewApplications}
+                      onViewDocuments={handleViewDocuments}
                       onContactStudent={handleContactStudent}
                     />
                   ))}
@@ -399,6 +408,7 @@ export default function StudentsPage() {
                       getApplicationStatusBadge={getApplicationStatusBadge}
                       onViewDetails={handleViewDetails}
                       onViewApplications={handleViewApplications}
+                      onViewDocuments={handleViewDocuments}
                       onContactStudent={handleContactStudent}
                     />
                   ))}
@@ -413,6 +423,7 @@ export default function StudentsPage() {
                       getApplicationStatusBadge={getApplicationStatusBadge}
                       onViewDetails={handleViewDetails}
                       onViewApplications={handleViewApplications}
+                      onViewDocuments={handleViewDocuments}
                       onContactStudent={handleContactStudent}
                     />
                   ))}
@@ -428,6 +439,12 @@ export default function StudentsPage() {
         open={detailsDialogOpen}
         onOpenChange={setDetailsDialogOpen}
       />
+
+      <StudentDocumentsDialog
+        studentId={selectedStudentId}
+        open={documentsDialogOpen}
+        onOpenChange={setDocumentsDialogOpen}
+      />
     </div>
   );
 }
@@ -439,6 +456,7 @@ function StudentCard({
   getApplicationStatusBadge,
   onViewDetails,
   onViewApplications,
+  onViewDocuments,
   onContactStudent
 }: {
   student: CoordinatorStudent;
@@ -446,6 +464,7 @@ function StudentCard({
   getApplicationStatusBadge: (status: string | null) => JSX.Element | null;
   onViewDetails: (id: string) => void;
   onViewApplications: (id: string) => void;
+  onViewDocuments: (id: string) => void;
   onContactStudent: (email: string) => void;
 }) {
   return (
@@ -504,6 +523,10 @@ function StudentCard({
           <Button size="sm" onClick={() => onViewDetails(student.id)}>
             <Eye className="h-4 w-4 mr-2" />
             View Details
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => onViewDocuments(student.id)}>
+            <FileText className="h-4 w-4 mr-2" />
+            View Documents
           </Button>
         </div>
       </CardContent>

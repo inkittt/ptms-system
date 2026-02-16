@@ -12,146 +12,188 @@ export declare class SessionsService {
         };
     } & {
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         name: string;
-        isActive: boolean;
         year: number;
         semester: number;
+        trainingStartDate: Date | null;
+        trainingEndDate: Date | null;
         deadlinesJSON: import("@prisma/client/runtime/library").JsonValue | null;
+        referenceNumberFormat: string | null;
         minCredits: number;
         minWeeks: number;
         maxWeeks: number;
+        createdAt: Date;
+        updatedAt: Date;
+        isActive: boolean;
+        coordinatorSignature: string | null;
+        coordinatorSignatureType: string | null;
+        coordinatorSignedAt: Date | null;
         coordinatorId: string | null;
     }>;
     findAll(): Promise<{
         totalApplications: number;
         totalStudents: number;
-        _count: {
-            applications: number;
-            studentSessions: number;
-        };
         coordinator: {
             id: string;
             name: string;
             email: string;
         };
+        _count: {
+            applications: number;
+            studentSessions: number;
+        };
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         name: string;
-        isActive: boolean;
         year: number;
         semester: number;
+        trainingStartDate: Date | null;
+        trainingEndDate: Date | null;
         deadlinesJSON: import("@prisma/client/runtime/library").JsonValue | null;
+        referenceNumberFormat: string | null;
         minCredits: number;
         minWeeks: number;
         maxWeeks: number;
+        createdAt: Date;
+        updatedAt: Date;
+        isActive: boolean;
+        coordinatorSignature: string | null;
+        coordinatorSignatureType: string | null;
+        coordinatorSignedAt: Date | null;
         coordinatorId: string | null;
     }[]>;
     findByCoordinator(coordinatorId: string): Promise<{
         totalApplications: number;
         totalStudents: number;
-        _count: {
-            applications: number;
-            studentSessions: number;
-        };
         coordinator: {
             id: string;
             name: string;
             email: string;
         };
+        _count: {
+            applications: number;
+            studentSessions: number;
+        };
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         name: string;
-        isActive: boolean;
         year: number;
         semester: number;
+        trainingStartDate: Date | null;
+        trainingEndDate: Date | null;
         deadlinesJSON: import("@prisma/client/runtime/library").JsonValue | null;
+        referenceNumberFormat: string | null;
         minCredits: number;
         minWeeks: number;
         maxWeeks: number;
+        createdAt: Date;
+        updatedAt: Date;
+        isActive: boolean;
+        coordinatorSignature: string | null;
+        coordinatorSignatureType: string | null;
+        coordinatorSignedAt: Date | null;
         coordinatorId: string | null;
     }[]>;
     findOne(id: string): Promise<{
         totalApplications: number;
         totalStudents: number;
-        _count: {
-            applications: number;
-            studentSessions: number;
-        };
         coordinator: {
             id: string;
             name: string;
             email: string;
         };
+        _count: {
+            applications: number;
+            studentSessions: number;
+        };
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         name: string;
-        isActive: boolean;
         year: number;
         semester: number;
+        trainingStartDate: Date | null;
+        trainingEndDate: Date | null;
         deadlinesJSON: import("@prisma/client/runtime/library").JsonValue | null;
+        referenceNumberFormat: string | null;
         minCredits: number;
         minWeeks: number;
         maxWeeks: number;
+        createdAt: Date;
+        updatedAt: Date;
+        isActive: boolean;
+        coordinatorSignature: string | null;
+        coordinatorSignatureType: string | null;
+        coordinatorSignedAt: Date | null;
         coordinatorId: string | null;
     }>;
     update(id: string, updateSessionDto: UpdateSessionDto): Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         name: string;
-        isActive: boolean;
         year: number;
         semester: number;
+        trainingStartDate: Date | null;
+        trainingEndDate: Date | null;
         deadlinesJSON: import("@prisma/client/runtime/library").JsonValue | null;
+        referenceNumberFormat: string | null;
         minCredits: number;
         minWeeks: number;
         maxWeeks: number;
+        createdAt: Date;
+        updatedAt: Date;
+        isActive: boolean;
+        coordinatorSignature: string | null;
+        coordinatorSignatureType: string | null;
+        coordinatorSignedAt: Date | null;
         coordinatorId: string | null;
     }>;
     remove(id: string): Promise<{
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
         name: string;
-        isActive: boolean;
         year: number;
         semester: number;
+        trainingStartDate: Date | null;
+        trainingEndDate: Date | null;
         deadlinesJSON: import("@prisma/client/runtime/library").JsonValue | null;
+        referenceNumberFormat: string | null;
         minCredits: number;
         minWeeks: number;
         maxWeeks: number;
+        createdAt: Date;
+        updatedAt: Date;
+        isActive: boolean;
+        coordinatorSignature: string | null;
+        coordinatorSignatureType: string | null;
+        coordinatorSignedAt: Date | null;
         coordinatorId: string | null;
     }>;
     importStudentsFromCsv(sessionId: string, csvBuffer: Buffer): Promise<unknown>;
     getStudentSession(userId: string, sessionId?: string): Promise<{
         session: {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
             name: string;
-            isActive: boolean;
             year: number;
             semester: number;
+            trainingStartDate: Date | null;
+            trainingEndDate: Date | null;
             deadlinesJSON: import("@prisma/client/runtime/library").JsonValue | null;
+            referenceNumberFormat: string | null;
             minCredits: number;
             minWeeks: number;
             maxWeeks: number;
+            createdAt: Date;
+            updatedAt: Date;
+            isActive: boolean;
+            coordinatorSignature: string | null;
+            coordinatorSignatureType: string | null;
+            coordinatorSignedAt: Date | null;
             coordinatorId: string | null;
         };
     } & {
         id: string;
-        userId: string;
-        sessionId: string;
-        status: string;
         createdAt: Date;
         updatedAt: Date;
         creditsEarned: number;
+        sessionId: string;
+        userId: string;
         isEligible: boolean;
+        status: string;
     }>;
     getStudentSessions(userId: string): Promise<({
         session: {
@@ -162,54 +204,65 @@ export declare class SessionsService {
             };
         } & {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
             name: string;
-            isActive: boolean;
             year: number;
             semester: number;
+            trainingStartDate: Date | null;
+            trainingEndDate: Date | null;
             deadlinesJSON: import("@prisma/client/runtime/library").JsonValue | null;
+            referenceNumberFormat: string | null;
             minCredits: number;
             minWeeks: number;
             maxWeeks: number;
+            createdAt: Date;
+            updatedAt: Date;
+            isActive: boolean;
+            coordinatorSignature: string | null;
+            coordinatorSignatureType: string | null;
+            coordinatorSignedAt: Date | null;
             coordinatorId: string | null;
         };
     } & {
         id: string;
-        userId: string;
-        sessionId: string;
-        status: string;
         createdAt: Date;
         updatedAt: Date;
         creditsEarned: number;
+        sessionId: string;
+        userId: string;
         isEligible: boolean;
+        status: string;
     })[]>;
     getSessionStudents(sessionId: string): Promise<({
         user: {
             id: string;
             name: string;
-            program: string;
             email: string;
             matricNo: string;
+            program: string;
         };
     } & {
         id: string;
-        userId: string;
-        sessionId: string;
-        status: string;
         createdAt: Date;
         updatedAt: Date;
         creditsEarned: number;
+        sessionId: string;
+        userId: string;
         isEligible: boolean;
+        status: string;
     })[]>;
     removeStudentFromSession(sessionId: string, userId: string): Promise<{
         id: string;
-        userId: string;
-        sessionId: string;
-        status: string;
         createdAt: Date;
         updatedAt: Date;
         creditsEarned: number;
+        sessionId: string;
+        userId: string;
         isEligible: boolean;
+        status: string;
+    }>;
+    uploadCoordinatorSignature(sessionId: string, coordinatorId: string, file: Express.Multer.File): Promise<{
+        message: string;
+        signatureUploaded: boolean;
+        signedAt: Date;
     }>;
 }

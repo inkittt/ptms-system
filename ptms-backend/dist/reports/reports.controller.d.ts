@@ -2,15 +2,17 @@ import { ReportsService } from './reports.service';
 export declare class ReportsController {
     private readonly reportsService;
     constructor(reportsService: ReportsService);
-    getOverviewStats(sessionId?: string, program?: string): Promise<{
+    getOverviewStats(user: any, sessionId?: string, program?: string): Promise<{
         stats: {
             totalStudents: number;
             eligibleStudents: number;
             totalApplications: number;
             approvedApplications: number;
+            approved: number;
             pendingReview: number;
             changesRequested: number;
             rejectedApplications: number;
+            overdue: number;
             sli03Issued: number;
             ongoingInternships: number;
             completedInternships: number;
@@ -18,7 +20,7 @@ export declare class ReportsController {
             avgApprovalRate: number;
         };
     }>;
-    getApplicationTrends(sessionId?: string, months?: string): Promise<{
+    getApplicationTrends(user: any, sessionId?: string, months?: string): Promise<{
         trends: {
             submitted: number;
             approved: number;
@@ -26,7 +28,7 @@ export declare class ReportsController {
             month: string;
         }[];
     }>;
-    getStatusDistribution(sessionId?: string, program?: string): Promise<{
+    getStatusDistribution(user: any, sessionId?: string, program?: string): Promise<{
         distribution: {
             name: string;
             value: number;
@@ -46,6 +48,10 @@ export declare class ReportsController {
         companies: {
             students: number;
             industry: string;
+            address?: string;
+            contactName?: string;
+            contactEmail?: string;
+            contactPhone?: string;
             company: string;
         }[];
     }>;
@@ -65,5 +71,61 @@ export declare class ReportsController {
             reviewed: number;
             avgTime: number;
         }[];
+    }>;
+    getStudentProgress(sessionId?: string): Promise<{
+        progress: {
+            students: {
+                id: string;
+                name: string;
+                matricNo: string;
+                program: string;
+                status: string;
+                progress: number;
+                completedSteps: number;
+                totalSteps: number;
+                applicationStatus: import(".prisma/client").$Enums.ApplicationStatus;
+                documents: {
+                    id: string;
+                    createdAt: Date;
+                    updatedAt: Date;
+                    status: import(".prisma/client").$Enums.DocumentStatus;
+                    applicationId: string;
+                    type: import(".prisma/client").$Enums.DocumentType;
+                    fileUrl: string;
+                    version: number;
+                    signedBy: string | null;
+                    signedAt: Date | null;
+                    storageType: string;
+                    driveFileId: string | null;
+                    driveWebViewLink: string | null;
+                    driveWebContentLink: string | null;
+                }[];
+                formResponses: {
+                    id: string;
+                    coordinatorSignature: string | null;
+                    coordinatorSignatureType: string | null;
+                    coordinatorSignedAt: Date | null;
+                    studentSignature: string | null;
+                    studentSignatureType: string | null;
+                    studentSignedAt: Date | null;
+                    supervisorSignature: string | null;
+                    supervisorSignatureType: string | null;
+                    supervisorSignedAt: Date | null;
+                    applicationId: string;
+                    formTypeEnum: string;
+                    payloadJSON: import("@prisma/client/runtime/library").JsonValue;
+                    submittedAt: Date;
+                    verifiedBy: string | null;
+                    supervisorName: string | null;
+                }[];
+            }[];
+            summary: {
+                notStarted: number;
+                submitted: number;
+                ongoing: number;
+                completed: number;
+                total: number;
+            };
+        };
     }>;
 }

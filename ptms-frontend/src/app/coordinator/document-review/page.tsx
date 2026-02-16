@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   FileCheck,
   Clock,
@@ -111,6 +114,8 @@ export default function DocumentReviewPage() {
   const [bli03FormData, setBli03FormData] = useState<any>(null);
   const [isBli04ModalOpen, setIsBli04ModalOpen] = useState(false);
   const [bli04FormData, setBli04FormData] = useState<any>(null);
+  const [isBli02ModalOpen, setIsBli02ModalOpen] = useState(false);
+  const [bli02Document, setBli02Document] = useState<PendingDocument | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sessionFilter, setSessionFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -118,6 +123,8 @@ export default function DocumentReviewPage() {
   const [documentTypeFilter, setDocumentTypeFilter] = useState("all");
   const [documents, setDocuments] = useState<PendingDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
 
   useEffect(() => {
     fetchDocuments();
@@ -182,6 +189,56 @@ export default function DocumentReviewPage() {
     setIsPreviewOpen(true);
   };
 
+  const handleDownload = async (document: PendingDocument) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      
+      // BLI-02 is an uploaded document, others are generated PDFs
+      const isUploadedDocument = document.type === 'BLI_02';
+      
+      let response;
+      if (isUploadedDocument) {
+        // Use the document download endpoint for uploaded files
+        response = await fetch(
+          `http://localhost:3000/api/applications/documents/${document.id}/download`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+      } else {
+        // Use the PDF generation endpoint for generated documents
+        const documentType = document.type.replace(/_/g, '-').toLowerCase();
+        response = await fetch(
+          `http://localhost:3000/api/applications/${document.application.id}/${documentType}/pdf`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to download document');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = `${document.type}-${document.application.user.name}.pdf`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      alert('Failed to download document. Please try again.');
+    }
+  };
+
   const handleViewBli03Form = async (applicationId: string) => {
     try {
       const token = localStorage.getItem('accessToken');
@@ -204,6 +261,9 @@ export default function DocumentReviewPage() {
           ...submission,
           formData: bli03Response.payloadJSON,
           submittedAt: bli03Response.submittedAt,
+          studentSignature: submission.studentSignature,
+          studentSignatureType: submission.studentSignatureType,
+          studentSignedAt: submission.studentSignedAt,
         });
         setIsBli03ModalOpen(true);
       } else {
@@ -212,6 +272,36 @@ export default function DocumentReviewPage() {
     } catch (error) {
       console.error('Error fetching BLI-03 form:', error);
       alert('Failed to load BLI-03 form data. Please try again.');
+    }
+  };
+
+  const handleGenerateBli03PDF = async (applicationId: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`http://localhost:3000/api/applications/${applicationId}/bli-03/pdf`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate BLI-03 PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = `BLI-03-${applicationId}.pdf`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      alert('✅ BLI-03 PDF generated and downloaded successfully!');
+    } catch (error) {
+      console.error('Error generating BLI-03 PDF:', error);
+      alert('❌ Failed to generate BLI-03 PDF. Please try again.');
     }
   };
 
@@ -233,12 +323,21 @@ export default function DocumentReviewPage() {
       const submission = data.submission;
       const bli04Response = submission.formResponses?.find((fr: any) => fr.formTypeEnum === 'BLI_04');
       
+      console.log('BLI-04 Response:', bli04Response);
+      console.log('BLI-04 PayloadJSON:', bli04Response?.payloadJSON);
+      
       if (bli04Response) {
-        setBli04FormData({
+        const formDataToSet = {
           ...submission,
           formData: bli04Response.payloadJSON,
           submittedAt: bli04Response.submittedAt,
-        });
+          supervisorSignature: bli04Response.supervisorSignature,
+          supervisorSignatureType: bli04Response.supervisorSignatureType,
+          supervisorSignedAt: bli04Response.supervisorSignedAt,
+          supervisorName: bli04Response.supervisorName,
+        };
+        console.log('Setting BLI-04 Form Data:', formDataToSet);
+        setBli04FormData(formDataToSet);
         setIsBli04ModalOpen(true);
       } else {
         alert('BLI-04 form data not found');
@@ -247,6 +346,11 @@ export default function DocumentReviewPage() {
       console.error('Error fetching BLI-04 form:', error);
       alert('Failed to load BLI-04 form data. Please try again.');
     }
+  };
+
+  const handleViewBli02Form = (document: PendingDocument) => {
+    setBli02Document(document);
+    setIsBli02ModalOpen(true);
   };
 
   const handleApprove = async (documentId: string) => {
@@ -296,6 +400,73 @@ export default function DocumentReviewPage() {
     } catch (error) {
       console.error("Error rejecting document:", error);
       alert(`Error rejecting document: ${error instanceof Error ? error.message : 'Please try again.'}`);
+    }
+  };
+
+  const toggleDocumentSelection = (documentId: string) => {
+    const newSelected = new Set(selectedDocuments);
+    if (newSelected.has(documentId)) {
+      newSelected.delete(documentId);
+    } else {
+      newSelected.add(documentId);
+    }
+    setSelectedDocuments(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    const approvableDocuments = filteredDocuments.filter(
+      doc => doc.status === 'PENDING_SIGNATURE' || doc.status === 'DRAFT'
+    );
+    
+    if (selectedDocuments.size === approvableDocuments.length && approvableDocuments.length > 0) {
+      setSelectedDocuments(new Set());
+    } else {
+      setSelectedDocuments(new Set(approvableDocuments.map(doc => doc.id)));
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedDocuments.size === 0) {
+      alert('Please select at least one document to approve.');
+      return;
+    }
+
+    const confirmed = confirm(
+      `Are you sure you want to approve ${selectedDocuments.size} document(s)?\n\nThis action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setIsBulkApproving(true);
+    let successCount = 0;
+    let failCount = 0;
+    const errors: string[] = [];
+
+    try {
+      for (const docId of Array.from(selectedDocuments)) {
+        try {
+          await documentsApi.reviewDocument(docId, {
+            decision: 'APPROVE',
+          });
+          successCount++;
+        } catch (error) {
+          failCount++;
+          errors.push(`Document ${docId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+
+      if (successCount > 0) {
+        alert(`✅ Successfully approved ${successCount} document(s).${failCount > 0 ? `\n❌ Failed to approve ${failCount} document(s).` : ''}`);
+      } else {
+        alert(`❌ Failed to approve all documents.\n\n${errors.join('\n')}`);
+      }
+
+      setSelectedDocuments(new Set());
+      fetchDocuments();
+    } catch (error) {
+      console.error('Error in bulk approval:', error);
+      alert('An unexpected error occurred during bulk approval.');
+    } finally {
+      setIsBulkApproving(false);
     }
   };
 
@@ -365,13 +536,62 @@ export default function DocumentReviewPage() {
                 <SelectItem value="all">All Documents</SelectItem>
                 <SelectItem value="BLI_01">BLI-01</SelectItem>
                 <SelectItem value="BLI_02">BLI-02</SelectItem>
-                <SelectItem value="BLI_03">BLI-03 (Online)</SelectItem>
-                <SelectItem value="BLI_03_HARDCOPY">BLI-03 (Hardcopy)</SelectItem>
+                <SelectItem value="BLI_03">BLI-03</SelectItem>
                 <SelectItem value="BLI_04">BLI-04</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
+
+        {/* Bulk Actions Bar */}
+        {filteredDocuments.filter(doc => doc.status === 'PENDING_SIGNATURE' || doc.status === 'DRAFT').length > 0 && (
+          <div className="bg-white p-4 rounded-lg shadow-sm border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="select-all"
+                    checked={
+                      selectedDocuments.size > 0 &&
+                      selectedDocuments.size === filteredDocuments.filter(doc => doc.status === 'PENDING_SIGNATURE' || doc.status === 'DRAFT').length
+                    }
+                    onCheckedChange={toggleSelectAll}
+                  />
+                  <Label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
+                    Select All ({filteredDocuments.filter(doc => doc.status === 'PENDING_SIGNATURE' || doc.status === 'DRAFT').length} approvable)
+                  </Label>
+                </div>
+                {selectedDocuments.size > 0 && (
+                  <Badge variant="secondary" className="ml-2">
+                    {selectedDocuments.size} selected
+                  </Badge>
+                )}
+              </div>
+              {selectedDocuments.size > 0 && (
+                <Button
+                  onClick={handleBulkApprove}
+                  disabled={isBulkApproving}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {isBulkApproving ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Approving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Bulk Approve ({selectedDocuments.size})
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Document Tabs */}
         <Tabs defaultValue="all" className="space-y-6">
@@ -400,11 +620,16 @@ export default function DocumentReviewPage() {
                     document={doc}
                     getStatusBadge={getStatusBadge}
                     onPreview={handlePreview}
+                    onDownload={handleDownload}
+                    onViewBli02Form={handleViewBli02Form}
                     onViewBli03Form={handleViewBli03Form}
+                    onGenerateBli03PDF={handleGenerateBli03PDF}
                     onViewBli04Form={handleViewBli04Form}
                     onApprove={handleApprove}
                     onRequestChanges={handleRequestChanges}
                     onReject={handleReject}
+                    isSelected={selectedDocuments.has(doc.id)}
+                    onToggleSelect={toggleDocumentSelection}
                   />
                 ))}
               </TabsContent>
@@ -416,27 +641,16 @@ export default function DocumentReviewPage() {
                     document={doc}
                     getStatusBadge={getStatusBadge}
                     onPreview={handlePreview}
+                    onDownload={handleDownload}
+                    onViewBli02Form={handleViewBli02Form}
                     onViewBli03Form={handleViewBli03Form}
+                    onGenerateBli03PDF={handleGenerateBli03PDF}
                     onViewBli04Form={handleViewBli04Form}
                     onApprove={handleApprove}
                     onRequestChanges={handleRequestChanges}
                     onReject={handleReject}
-                  />
-                ))}
-              </TabsContent>
-
-              <TabsContent value="DRAFT" className="space-y-4">
-                {filteredDocuments.filter(doc => doc.status === "DRAFT").map((doc) => (
-                  <DocumentCard
-                    key={doc.id}
-                    document={doc}
-                    getStatusBadge={getStatusBadge}
-                    onPreview={handlePreview}
-                    onViewBli03Form={handleViewBli03Form}
-                    onViewBli04Form={handleViewBli04Form}
-                    onApprove={handleApprove}
-                    onRequestChanges={handleRequestChanges}
-                    onReject={handleReject}
+                    isSelected={selectedDocuments.has(doc.id)}
+                    onToggleSelect={toggleDocumentSelection}
                   />
                 ))}
               </TabsContent>
@@ -448,11 +662,16 @@ export default function DocumentReviewPage() {
                     document={doc}
                     getStatusBadge={getStatusBadge}
                     onPreview={handlePreview}
+                    onDownload={handleDownload}
+                    onViewBli02Form={handleViewBli02Form}
                     onViewBli03Form={handleViewBli03Form}
+                    onGenerateBli03PDF={handleGenerateBli03PDF}
                     onViewBli04Form={handleViewBli04Form}
                     onApprove={handleApprove}
                     onRequestChanges={handleRequestChanges}
                     onReject={handleReject}
+                    isSelected={selectedDocuments.has(doc.id)}
+                    onToggleSelect={toggleDocumentSelection}
                   />
                 ))}
               </TabsContent>
@@ -464,11 +683,16 @@ export default function DocumentReviewPage() {
                     document={doc}
                     getStatusBadge={getStatusBadge}
                     onPreview={handlePreview}
+                    onDownload={handleDownload}
+                    onViewBli02Form={handleViewBli02Form}
                     onViewBli03Form={handleViewBli03Form}
+                    onGenerateBli03PDF={handleGenerateBli03PDF}
                     onViewBli04Form={handleViewBli04Form}
                     onApprove={handleApprove}
                     onRequestChanges={handleRequestChanges}
                     onReject={handleReject}
+                    isSelected={selectedDocuments.has(doc.id)}
+                    onToggleSelect={toggleDocumentSelection}
                   />
                 ))}
               </TabsContent>
@@ -501,12 +725,352 @@ export default function DocumentReviewPage() {
           formData={bli04FormData}
         />
       )}
+
+      {/* BLI-02 Form Modal */}
+      {isBli02ModalOpen && bli02Document && (
+        <BLI02FormModal
+          isOpen={isBli02ModalOpen}
+          onClose={() => {
+            setIsBli02ModalOpen(false);
+            setBli02Document(null);
+          }}
+          document={bli02Document}
+          onApprove={handleApprove}
+          onRequestChanges={handleRequestChanges}
+          onReject={handleReject}
+          onDownload={handleDownload}
+          fetchDocuments={fetchDocuments}
+        />
+      )}
+    </div>
+  );
+}
+
+// BLI-02 Form Modal Component
+function BLI02FormModal({ 
+  isOpen, 
+  onClose, 
+  document,
+  onApprove,
+  onRequestChanges,
+  onReject,
+  onDownload,
+  fetchDocuments
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  document: PendingDocument;
+  onApprove: (id: string) => void;
+  onRequestChanges: (id: string) => void;
+  onReject: (id: string) => void;
+  onDownload: (doc: PendingDocument) => void;
+  fetchDocuments: () => void;
+}) {
+  const [previewUrl, setPreviewUrl] = React.useState<string>("");
+  const [isLoadingPreview, setIsLoadingPreview] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isOpen && document) {
+      loadPreview();
+    }
+  }, [isOpen, document]);
+
+  const loadPreview = async () => {
+    setIsLoadingPreview(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(
+        `http://localhost:3000/api/applications/documents/${document.id}/download`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to load document preview');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setPreviewUrl(url);
+    } catch (error) {
+      console.error('Error loading preview:', error);
+      alert('Failed to load document preview.');
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  const handleApproveClick = async () => {
+    await onApprove(document.id);
+    onClose();
+    fetchDocuments();
+  };
+
+  const handleRequestChangesClick = async () => {
+    await onRequestChanges(document.id);
+    onClose();
+    fetchDocuments();
+  };
+
+  const handleRejectClick = async () => {
+    await onReject(document.id);
+    onClose();
+    fetchDocuments();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">BLI-02: Company Acceptance Letter</h2>
+            <p className="text-sm text-gray-600 mt-1">
+              Student: {document.application.user.name} ({document.application.user.matricNo})
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Document Information */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Document Information</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm font-medium text-gray-500">Company</p>
+                <p className="text-base">{document.application.company?.name || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Program</p>
+                <p className="text-base">{document.application.user.program}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Session</p>
+                <p className="text-base">
+                  {document.application.session.year} / Semester {document.application.session.semester}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Submitted Date</p>
+                <p className="text-base">
+                  {new Date(document.createdAt).toLocaleDateString('en-MY', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Document Preview */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Document Preview</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingPreview ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Loading preview...</p>
+                  </div>
+                </div>
+              ) : previewUrl ? (
+                <div className="border rounded-lg overflow-hidden">
+                  <iframe
+                    src={previewUrl}
+                    className="w-full h-[600px]"
+                    title="Document Preview"
+                  />
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <FileText className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                  <p>Unable to load preview</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-between gap-3">
+          <div className="flex gap-2">
+            <Button onClick={onClose} variant="outline">
+              Close
+            </Button>
+            <Button onClick={() => onDownload(document)} variant="outline">
+              <Download className="h-4 w-4 mr-2" />
+              Download
+            </Button>
+          </div>
+          {document.status === "PENDING_SIGNATURE" && (
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleApproveClick} 
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Check className="h-4 w-4 mr-2" />
+                Approve
+              </Button>
+              <Button 
+                onClick={handleRequestChangesClick} 
+                variant="outline"
+              >
+                <MessageSquare className="h-4 w-4 mr-2" />
+                Request Changes
+              </Button>
+              <Button 
+                onClick={handleRejectClick} 
+                variant="destructive"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Reject
+              </Button>
+            </div>
+          )}
+          {document.status === "DRAFT" && (
+            <Button 
+              onClick={handleApproveClick} 
+              className="bg-green-600 hover:bg-green-700"
+            >
+              <Check className="h-4 w-4 mr-2" />
+              Approve Changes
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
 // BLI-03 Form Modal Component
 function BLI03FormModal({ isOpen, onClose, formData }: { isOpen: boolean; onClose: () => void; formData: any }) {
+  const [signatureType, setSignatureType] = React.useState<"typed" | "drawn">("typed");
+  const [typedSignature, setTypedSignature] = React.useState("");
+  const [drawnSignature, setDrawnSignature] = React.useState("");
+  const [isDrawing, setIsDrawing] = React.useState(false);
+  const [isApproving, setIsApproving] = React.useState(false);
+  const [decision, setDecision] = React.useState<"APPROVE" | "REQUEST_CHANGES">("APPROVE");
+  const [comments, setComments] = React.useState("");
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+
+  React.useEffect(() => {
+    // Pre-fill coordinator signature with their name
+    async function loadProfile() {
+      try {
+        const token = localStorage.getItem('accessToken');
+        const response = await fetch('http://localhost:3000/api/applications/profile', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setTypedSignature(data.profile.name || "");
+        }
+      } catch (error) {
+        console.error('Error loading profile:', error);
+      }
+    }
+    if (isOpen) {
+      loadProfile();
+    }
+  }, [isOpen]);
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    setIsDrawing(true);
+    ctx.beginPath();
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        setDrawnSignature(canvas.toDataURL());
+      }
+      setIsDrawing(false);
+    }
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setDrawnSignature("");
+  };
+
+  const handleApprove = async () => {
+    if (decision === 'REQUEST_CHANGES' && !comments.trim()) {
+      alert('❌ Please provide comments when requesting changes.');
+      return;
+    }
+
+    const confirmMessage = decision === 'APPROVE'
+      ? '⚠️ Confirmation Required\n\nAre you ready to approve this BLI-03 form?\n\nThis will unlock BLI-03, SLI-03, and DLI-01 documents for the student.\n\nClick OK to approve, or Cancel to review.'
+      : '⚠️ Confirmation Required\n\nAre you ready to request changes for this BLI-03 form?\n\nClick OK to send back for changes, or Cancel to review.';
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setIsApproving(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`http://localhost:3000/api/applications/bli03/submissions/${formData.id}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          decision,
+          comments: decision === 'REQUEST_CHANGES' ? comments : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to process approval');
+      }
+
+      alert(`✅ BLI-03 submission ${decision === 'APPROVE' ? 'approved' : 'sent back for changes'} successfully!`);
+      onClose();
+      window.location.reload();
+    } catch (error) {
+      console.error('Error processing approval:', error);
+      alert(`❌ Error: ${error instanceof Error ? error.message : 'Failed to process approval'}`);
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const data = formData.formData || {};
@@ -616,14 +1180,191 @@ function BLI03FormModal({ isOpen, onClose, formData }: { isOpen: boolean; onClos
             </CardContent>
           </Card>
 
+          {/* Student Signature */}
+          {formData.studentSignature && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Student Signature</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Signature Type</p>
+                  <Badge>
+                    {formData.studentSignatureType === 'typed' 
+                      ? 'Typed Signature' 
+                      : formData.studentSignatureType === 'image'
+                      ? 'Uploaded Image'
+                      : 'Drawn Signature'}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Signature</p>
+                  {formData.studentSignatureType === 'typed' ? (
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <p className="font-serif text-3xl">{formData.studentSignature}</p>
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg p-4 bg-white">
+                      <img 
+                        src={formData.studentSignature.startsWith('data:') 
+                          ? formData.studentSignature 
+                          : `data:image/png;base64,${formData.studentSignature}`
+                        } 
+                        alt="Student Signature" 
+                        className="max-w-md" 
+                      />
+                    </div>
+                  )}
+                </div>
+                {formData.studentSignedAt && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Signed At</p>
+                    <p className="text-base">
+                      {new Date(formData.studentSignedAt).toLocaleDateString('en-MY', { year: 'numeric', month: 'long', day: 'numeric' })} at {new Date(formData.studentSignedAt).toLocaleTimeString('en-MY')}
+                    </p>
+                  </div>
+                )}
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <span className="text-green-900 font-medium">Student Signed</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Coordinator Signature */}
+          {formData.coordinatorSignature && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Coordinator Signature</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Signature Type</p>
+                  <Badge>{formData.coordinatorSignatureType === 'typed' ? 'Typed Signature' : 'Drawn Signature'}</Badge>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Signature</p>
+                  {formData.coordinatorSignatureType === 'typed' ? (
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <p className="font-serif text-3xl">{formData.coordinatorSignature}</p>
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg p-4 bg-white">
+                      <img src={formData.coordinatorSignature} alt="Coordinator Signature" className="max-w-md" />
+                    </div>
+                  )}
+                </div>
+                {formData.coordinatorSignedAt && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Signed At</p>
+                    <p className="text-base">
+                      {new Date(formData.coordinatorSignedAt).toLocaleDateString('en-MY', { year: 'numeric', month: 'long', day: 'numeric' })} at {new Date(formData.coordinatorSignedAt).toLocaleTimeString('en-MY')}
+                    </p>
+                  </div>
+                )}
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <span className="text-green-900 font-medium">Coordinator Approved & Signed</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Submission Info */}
           <div className="text-sm text-gray-500">
             <p><span className="font-medium">Submitted:</span> {formData.submittedAt ? new Date(formData.submittedAt).toLocaleString('en-MY') : 'N/A'}</p>
           </div>
+
+          {/* Coordinator Approval Section */}
+          {formData.studentSignature && !formData.coordinatorSignature && (
+            <Card className="border-blue-200">
+              <CardHeader>
+                <CardTitle>Coordinator Approval</CardTitle>
+                <CardDescription>
+                  Review and approve the BLI-03 organization selection form
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Decision Selector */}
+                <div>
+                  <Label htmlFor="decision">Decision</Label>
+                  <Tabs value={decision} onValueChange={(val) => setDecision(val as "APPROVE" | "REQUEST_CHANGES")} className="mt-2">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="APPROVE" className="data-[state=active]:bg-green-100 data-[state=active]:text-green-900">
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Approve
+                      </TabsTrigger>
+                      <TabsTrigger value="REQUEST_CHANGES" className="data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-900">
+                        <AlertTriangle className="h-4 w-4 mr-2" />
+                        Request Changes
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+
+                {/* Comments Field */}
+                <div>
+                  <Label htmlFor="comments">Comments {decision === 'REQUEST_CHANGES' && <span className="text-red-600">*</span>}</Label>
+                  <Textarea
+                    id="comments"
+                    value={comments}
+                    onChange={(e) => setComments(e.target.value)}
+                    placeholder={decision === 'APPROVE' ? "Add any comments or feedback (optional)..." : "Please provide comments for the requested changes..."}
+                    rows={3}
+                    className="mt-1"
+                  />
+                </div>
+
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-blue-900">
+                    <strong>Note:</strong> {decision === 'APPROVE' 
+                      ? 'Approving this submission will unlock BLI-03, SLI-03, and DLI-01 documents for the student.'
+                      : 'Requesting changes will require the student to resubmit the form.'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end">
-          <Button onClick={onClose}>Close</Button>
+        <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end gap-3">
+          <Button onClick={onClose} variant="outline">Close</Button>
+          {formData.studentSignature && !formData.coordinatorSignature && (
+            <Button 
+              onClick={handleApprove} 
+              disabled={isApproving}
+              className={decision === 'APPROVE' ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'}
+            >
+              {isApproving ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  {decision === 'APPROVE' ? (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Approve
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="h-4 w-4 mr-2" />
+                      Request Changes
+                    </>
+                  )}
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -632,9 +1373,61 @@ function BLI03FormModal({ isOpen, onClose, formData }: { isOpen: boolean; onClos
 
 // BLI-04 Form Modal Component
 function BLI04FormModal({ isOpen, onClose, formData }: { isOpen: boolean; onClose: () => void; formData: any }) {
+  const [isApproving, setIsApproving] = React.useState(false);
+  const [decision, setDecision] = React.useState<"APPROVE" | "REQUEST_CHANGES">("APPROVE");
+  const [comments, setComments] = React.useState("");
+
+  const handleApprove = async () => {
+    if (decision === 'REQUEST_CHANGES' && !comments.trim()) {
+      alert('❌ Please provide comments when requesting changes.');
+      return;
+    }
+
+    const confirmMessage = decision === 'APPROVE'
+      ? '⚠️ Confirmation Required\n\nAre you ready to approve this BLI-04 form?\n\nClick OK to approve, or Cancel to review.'
+      : '⚠️ Confirmation Required\n\nAre you ready to request changes for this BLI-04 form?\n\nClick OK to send back for changes, or Cancel to review.';
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setIsApproving(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const response = await fetch(`http://localhost:3000/api/applications/bli04/submissions/${formData.id}/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          decision,
+          comments: decision === 'REQUEST_CHANGES' ? comments : undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to verify submission');
+      }
+
+      alert(`✅ BLI-04 submission ${decision === 'APPROVE' ? 'approved' : 'sent back for changes'} successfully!`);
+      onClose();
+      window.location.reload();
+    } catch (error) {
+      console.error('Error verifying submission:', error);
+      alert(`❌ Error: ${error instanceof Error ? error.message : 'Failed to verify submission'}`);
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   const data = formData.formData || {};
+  const supervisorSignature = formData.supervisorSignature;
+  const supervisorSignatureType = formData.supervisorSignatureType;
+  const supervisorSignedAt = formData.supervisorSignedAt;
+  const supervisorNameFromForm = formData.supervisorName;
+  const isVerified = formData.verifiedBy || formData.isVerified;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -689,7 +1482,7 @@ function BLI04FormModal({ isOpen, onClose, formData }: { isOpen: boolean; onClos
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">Supervisor Name</p>
-                  <p className="text-base">{data.supervisorName || 'N/A'}</p>
+                  <p className="text-base">{supervisorNameFromForm || data.supervisorName || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-500">Telephone</p>
@@ -751,29 +1544,163 @@ function BLI04FormModal({ isOpen, onClose, formData }: { isOpen: boolean; onClos
                   {data.reportingDate ? new Date(data.reportingDate).toLocaleDateString('en-MY', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}
                 </p>
               </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500">Supervisor Signature Date</p>
-                <p className="text-base">
-                  {data.supervisorSignatureDate ? new Date(data.supervisorSignatureDate).toLocaleDateString('en-MY', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A'}
-                </p>
-              </div>
-              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                  <span className="text-green-900 font-medium">Supervisor Confirmed</span>
+              {supervisorSignedAt && (
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Supervisor Signed At</p>
+                  <p className="text-base">
+                    {new Date(supervisorSignedAt).toLocaleDateString('en-MY', { year: 'numeric', month: 'long', day: 'numeric' })} at {new Date(supervisorSignedAt).toLocaleTimeString('en-MY')}
+                  </p>
                 </div>
-              </div>
+              )}
+              {supervisorSignedAt && (
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                    <span className="text-green-900 font-medium">Supervisor Confirmed</span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
+
+          {/* Supervisor Signature */}
+          {supervisorSignature && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Supervisor Signature</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Signature Type</p>
+                  <Badge>{supervisorSignatureType === 'typed' ? 'Typed Signature' : 'Drawn Signature'}</Badge>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Signature</p>
+                  {supervisorSignatureType === 'typed' ? (
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <p className="font-serif text-3xl text-center">{supervisorSignature}</p>
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg p-4 bg-white">
+                      <img src={supervisorSignature} alt="Supervisor Signature" className="max-w-md mx-auto" />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Signed By</p>
+                  <p className="text-base font-medium">{supervisorNameFromForm || 'N/A'}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Submission Info */}
           <div className="text-sm text-gray-500">
             <p><span className="font-medium">Submitted:</span> {formData.submittedAt ? new Date(formData.submittedAt).toLocaleString('en-MY') : 'N/A'}</p>
           </div>
+
+          {/* Coordinator Approval Section */}
+          {supervisorSignedAt && !isVerified && (
+            <Card className="border-blue-200">
+              <CardHeader>
+                <CardTitle>Coordinator Verification</CardTitle>
+                <CardDescription>
+                  Review and verify the BLI-04 submission after supervisor confirmation
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Decision Selector */}
+                <div>
+                  <Label htmlFor="decision">Decision</Label>
+                  <Tabs value={decision} onValueChange={(val) => setDecision(val as "APPROVE" | "REQUEST_CHANGES")} className="mt-2">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="APPROVE" className="data-[state=active]:bg-green-100 data-[state=active]:text-green-900">
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Approve
+                      </TabsTrigger>
+                      <TabsTrigger value="REQUEST_CHANGES" className="data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-900">
+                        <AlertTriangle className="h-4 w-4 mr-2" />
+                        Request Changes
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </div>
+
+                {/* Comments Field */}
+                <div>
+                  <Label htmlFor="comments">Comments {decision === 'REQUEST_CHANGES' && <span className="text-red-600">*</span>}</Label>
+                  <Textarea
+                    id="comments"
+                    value={comments}
+                    onChange={(e) => setComments(e.target.value)}
+                    placeholder={decision === 'APPROVE' ? "Add any comments or feedback (optional)..." : "Please provide comments for the requested changes..."}
+                    rows={3}
+                    className="mt-1"
+                  />
+                </div>
+
+                {/* Signature Section - Not needed for BLI04, just approval */}
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-blue-900">
+                    <strong>Note:</strong> {decision === 'APPROVE' 
+                      ? 'Approving this submission will mark the student as having officially reported for duty. The student and supervisor will be notified.'
+                      : 'Requesting changes will clear the supervisor signature and require the student to resubmit the form.'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {isVerified && (
+            <Card className="border-green-200 bg-green-50">
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <CheckCircle className="h-6 w-6 text-green-600" />
+                  <div>
+                    <p className="font-semibold text-green-900">Verified by Coordinator</p>
+                    <p className="text-sm text-green-700">
+                      This submission has been verified and approved.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
-        <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end">
-          <Button onClick={onClose}>Close</Button>
+        <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end gap-3">
+          <Button onClick={onClose} variant="outline">Close</Button>
+          {supervisorSignedAt && !isVerified && (
+            <Button 
+              onClick={handleApprove} 
+              disabled={isApproving}
+              className={decision === 'APPROVE' ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'}
+            >
+              {isApproving ? (
+                <>
+                  <svg className="animate-spin h-4 w-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  {decision === 'APPROVE' ? (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Approve
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="h-4 w-4 mr-2" />
+                      Request Changes
+                    </>
+                  )}
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -785,29 +1712,49 @@ function DocumentCard({
   document,
   getStatusBadge,
   onPreview,
+  onDownload,
+  onViewBli02Form,
   onViewBli03Form,
+  onGenerateBli03PDF,
   onViewBli04Form,
   onApprove,
   onRequestChanges,
-  onReject
+  onReject,
+  isSelected,
+  onToggleSelect
 }: {
   document: PendingDocument;
   getStatusBadge: (status: string) => JSX.Element;
   onPreview: (doc: PendingDocument) => void;
+  onDownload: (doc: PendingDocument) => void;
+  onViewBli02Form: (doc: PendingDocument) => void;
   onViewBli03Form: (applicationId: string) => void;
+  onGenerateBli03PDF: (applicationId: string) => void;
   onViewBli04Form: (applicationId: string) => void;
   onApprove: (id: string) => void;
   onRequestChanges: (id: string) => void;
   onReject: (id: string) => void;
+  isSelected: boolean;
+  onToggleSelect: (documentId: string) => void;
 }) {
   const daysWaiting = Math.floor(
     (new Date().getTime() - new Date(document.createdAt).getTime()) / (1000 * 60 * 60 * 24)
   );
 
+  const isApprovable = document.status === 'PENDING_SIGNATURE' || document.status === 'DRAFT';
+
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardContent className="p-6">
-        <div className="flex justify-between items-start mb-4">
+        <div className="flex gap-4 items-start mb-4">
+          {isApprovable && (
+            <div className="flex items-center pt-1">
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={() => onToggleSelect(document.id)}
+              />
+            </div>
+          )}
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <FileText className="h-5 w-5 text-blue-600" />
@@ -862,24 +1809,25 @@ function DocumentCard({
               </Badge>
             </>
           ) : document.type === 'BLI_03' ? (
-            <Button size="sm" onClick={() => onViewBli03Form(document.application.id)}>
-              <FileText className="h-4 w-4 mr-2" />
-              View Form
-            </Button>
-          ) : document.type === 'BLI_03_HARDCOPY' ? (
             <>
-              <Button size="sm" onClick={() => onPreview(document)}>
-                <Eye className="h-4 w-4 mr-2" />
-                Preview Hardcopy
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => onViewBli03Form(document.application.id)}>
+              <Button size="sm" onClick={() => onViewBli03Form(document.application.id)}>
                 <FileText className="h-4 w-4 mr-2" />
-                View Original Form
+                View Form
               </Button>
-              <Button size="sm" variant="outline" onClick={() => console.log("Download", document.id)}>
+              <Button size="sm" variant="outline" onClick={() => onGenerateBli03PDF(document.application.id)}>
                 <Download className="h-4 w-4 mr-2" />
-                Download
+                Generate PDF
               </Button>
+            </>
+          ) : document.type === 'BLI_02' ? (
+            <>
+              <Button size="sm" onClick={() => onViewBli02Form(document)}>
+                <FileText className="h-4 w-4 mr-2" />
+                View BLI-02 Form
+              </Button>
+              <Badge variant="outline" className="ml-2">
+                Acceptance Letter
+              </Badge>
             </>
           ) : (
             <>
@@ -887,33 +1835,33 @@ function DocumentCard({
                 <Eye className="h-4 w-4 mr-2" />
                 Preview
               </Button>
-              <Button size="sm" variant="outline" onClick={() => console.log("Download", document.id)}>
+              <Button size="sm" variant="outline" onClick={() => onDownload(document)}>
                 <Download className="h-4 w-4 mr-2" />
                 Download
               </Button>
+              {document.status === "PENDING_SIGNATURE" && (
+                <>
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => onApprove(document.id)}>
+                    <Check className="h-4 w-4 mr-2" />
+                    Approve
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => onRequestChanges(document.id)}>
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Request Changes
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => onReject(document.id)}>
+                    <X className="h-4 w-4 mr-2" />
+                    Reject
+                  </Button>
+                </>
+              )}
+              {document.status === "DRAFT" && (
+                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => onApprove(document.id)}>
+                  <Check className="h-4 w-4 mr-2" />
+                  Approve Changes
+                </Button>
+              )}
             </>
-          )}
-          {document.status === "PENDING_SIGNATURE" && (
-            <>
-              <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => onApprove(document.id)}>
-                <Check className="h-4 w-4 mr-2" />
-                Approve
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => onRequestChanges(document.id)}>
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Request Changes
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => onReject(document.id)}>
-                <X className="h-4 w-4 mr-2" />
-                Reject
-              </Button>
-            </>
-          )}
-          {document.status === "DRAFT" && (
-            <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => onApprove(document.id)}>
-              <Check className="h-4 w-4 mr-2" />
-              Approve Changes
-            </Button>
           )}
         </div>
       </CardContent>

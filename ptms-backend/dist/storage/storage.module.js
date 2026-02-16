@@ -10,13 +10,19 @@ exports.StorageModule = void 0;
 const common_1 = require("@nestjs/common");
 const storage_service_1 = require("./storage.service");
 const config_1 = require("@nestjs/config");
+const local_storage_adapter_1 = require("./adapters/local-storage.adapter");
+const supabase_storage_adapter_1 = require("./adapters/supabase-storage.adapter");
 let StorageModule = class StorageModule {
 };
 exports.StorageModule = StorageModule;
 exports.StorageModule = StorageModule = __decorate([
     (0, common_1.Module)({
         imports: [config_1.ConfigModule],
-        providers: [storage_service_1.StorageService],
+        providers: [
+            storage_service_1.StorageService,
+            local_storage_adapter_1.LocalStorageAdapter,
+            supabase_storage_adapter_1.SupabaseStorageAdapter,
+        ],
         exports: [storage_service_1.StorageService],
     })
 ], StorageModule);

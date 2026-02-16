@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsString, IsObject, Min, Max, IsOptional, IsBoolean } from 'class-validator';
+import { IsInt, IsNotEmpty, IsString, IsObject, Min, Max, IsOptional, IsBoolean, IsDateString } from 'class-validator';
 
 export class CreateSessionDto {
   @IsString()
@@ -14,6 +14,14 @@ export class CreateSessionDto {
   @Min(1)
   @Max(2)
   semester: number;
+
+  @IsDateString()
+  @IsOptional()
+  trainingStartDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  trainingEndDate?: string;
 
   @IsObject()
   @IsOptional()
@@ -39,4 +47,12 @@ export class CreateSessionDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @IsString()
+  @IsOptional()
+  coordinatorSignature?: string;
+
+  @IsString()
+  @IsOptional()
+  coordinatorSignatureType?: string;
 }

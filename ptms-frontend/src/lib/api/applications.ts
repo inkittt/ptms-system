@@ -57,6 +57,7 @@ export interface UserProfile {
   name: string;
   email: string;
   matricNo: string;
+  icNumber?: string;
   program: string;
   phone: string;
   creditsEarned: number;
@@ -90,7 +91,7 @@ export const applicationsApi = {
   },
 
   downloadBLI01PDF: async (applicationId: string) => {
-    const blob = await api.getBlob(`/applications/${applicationId}/bli01/pdf`);
+    const blob = await api.getBlob(`/applications/${applicationId}/bli-01/pdf`);
     return blob;
   },
 };

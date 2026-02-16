@@ -18,22 +18,23 @@ const reports_service_1 = require("./reports.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const roles_guard_1 = require("../auth/guards/roles.guard");
 const roles_decorator_1 = require("../auth/decorators/roles.decorator");
+const current_user_decorator_1 = require("../auth/decorators/current-user.decorator");
 const client_1 = require("@prisma/client");
 let ReportsController = class ReportsController {
     constructor(reportsService) {
         this.reportsService = reportsService;
     }
-    async getOverviewStats(sessionId, program) {
-        const stats = await this.reportsService.getOverviewStats(sessionId, program);
+    async getOverviewStats(user, sessionId, program) {
+        const stats = await this.reportsService.getOverviewStats(user.userId, sessionId, program);
         return { stats };
     }
-    async getApplicationTrends(sessionId, months) {
+    async getApplicationTrends(user, sessionId, months) {
         const monthsCount = months ? parseInt(months) : 6;
-        const trends = await this.reportsService.getApplicationTrends(sessionId, monthsCount);
+        const trends = await this.reportsService.getApplicationTrends(user.userId, sessionId, monthsCount);
         return { trends };
     }
-    async getStatusDistribution(sessionId, program) {
-        const distribution = await this.reportsService.getStatusDistribution(sessionId, program);
+    async getStatusDistribution(user, sessionId, program) {
+        const distribution = await this.reportsService.getStatusDistribution(user.userId, sessionId, program);
         return { distribution };
     }
     async getProgramDistribution(sessionId) {
@@ -58,33 +59,40 @@ let ReportsController = class ReportsController {
         const performance = await this.reportsService.getReviewPerformance(sessionId, weeksCount);
         return { performance };
     }
+    async getStudentProgress(sessionId) {
+        const progress = await this.reportsService.getStudentProgress(sessionId);
+        return { progress };
+    }
 };
 exports.ReportsController = ReportsController;
 __decorate([
     (0, common_1.Get)('overview'),
     (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR, client_1.UserRole.LECTURER),
-    __param(0, (0, common_1.Query)('sessionId')),
-    __param(1, (0, common_1.Query)('program')),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)('sessionId')),
+    __param(2, (0, common_1.Query)('program')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", Promise)
 ], ReportsController.prototype, "getOverviewStats", null);
 __decorate([
     (0, common_1.Get)('application-trends'),
     (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR, client_1.UserRole.LECTURER),
-    __param(0, (0, common_1.Query)('sessionId')),
-    __param(1, (0, common_1.Query)('months')),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)('sessionId')),
+    __param(2, (0, common_1.Query)('months')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", Promise)
 ], ReportsController.prototype, "getApplicationTrends", null);
 __decorate([
     (0, common_1.Get)('status-distribution'),
     (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR, client_1.UserRole.LECTURER),
-    __param(0, (0, common_1.Query)('sessionId')),
-    __param(1, (0, common_1.Query)('program')),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)('sessionId')),
+    __param(2, (0, common_1.Query)('program')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", Promise)
 ], ReportsController.prototype, "getStatusDistribution", null);
 __decorate([
@@ -129,6 +137,14 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], ReportsController.prototype, "getReviewPerformance", null);
+__decorate([
+    (0, common_1.Get)('student-progress'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR, client_1.UserRole.LECTURER),
+    __param(0, (0, common_1.Query)('sessionId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ReportsController.prototype, "getStudentProgress", null);
 exports.ReportsController = ReportsController = __decorate([
     (0, common_1.Controller)('reports'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),

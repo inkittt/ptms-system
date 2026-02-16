@@ -15,6 +15,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SessionsController = void 0;
 const common_1 = require("@nestjs/common");
 const platform_express_1 = require("@nestjs/platform-express");
+const multer_1 = require("multer");
+const path_1 = require("path");
 const sessions_service_1 = require("./sessions.service");
 const create_session_dto_1 = require("./dto/create-session.dto");
 const update_session_dto_1 = require("./dto/update-session.dto");
@@ -67,6 +69,12 @@ let SessionsController = class SessionsController {
     }
     removeStudentFromSession(sessionId, userId) {
         return this.sessionsService.removeStudentFromSession(sessionId, userId);
+    }
+    async uploadCoordinatorSignature(sessionId, file, req) {
+        if (!file) {
+            throw new common_1.BadRequestException('Signature image file is required');
+        }
+        return this.sessionsService.uploadCoordinatorSignature(sessionId, req.user.userId, file);
     }
 };
 exports.SessionsController = SessionsController;
@@ -161,6 +169,35 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], SessionsController.prototype, "removeStudentFromSession", null);
+__decorate([
+    (0, common_1.Post)(':id/upload-coordinator-signature'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR, client_1.UserRole.ADMIN),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('signature', {
+        storage: (0, multer_1.diskStorage)({
+            destination: './uploads/signatures',
+            filename: (req, file, cb) => {
+                const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+                const ext = (0, path_1.extname)(file.originalname);
+                cb(null, `coordinator-signature-${uniqueSuffix}${ext}`);
+            },
+        }),
+        fileFilter: (req, file, cb) => {
+            if (!file.originalname.match(/\.(png|jpg|jpeg)$/i)) {
+                return cb(new Error('Only PNG and JPG image files are allowed for signatures'), false);
+            }
+            cb(null, true);
+        },
+        limits: {
+            fileSize: 2 * 1024 * 1024,
+        },
+    })),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.UploadedFile)()),
+    __param(2, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, Object]),
+    __metadata("design:returntype", Promise)
+], SessionsController.prototype, "uploadCoordinatorSignature", null);
 exports.SessionsController = SessionsController = __decorate([
     (0, common_1.Controller)('sessions'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),

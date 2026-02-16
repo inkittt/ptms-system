@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
-import { ApplicationsService } from './applications.service';
 import { ApplicationsController } from './applications.controller';
+import { SupervisorController } from './supervisor.controller';
+import { ApplicationsService } from './applications.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { StorageModule } from '../storage/storage.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [ApplicationsController],
+  imports: [PrismaModule, StorageModule, NotificationsModule],
+  controllers: [ApplicationsController, SupervisorController],
   providers: [ApplicationsService],
   exports: [ApplicationsService],
 })

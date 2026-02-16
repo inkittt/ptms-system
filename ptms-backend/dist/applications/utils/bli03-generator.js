@@ -6,8 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateBLI03 = generateBLI03;
 exports.validateBLI03Data = validateBLI03Data;
 const pdfkit_1 = __importDefault(require("pdfkit"));
+const sharp_1 = __importDefault(require("sharp"));
 async function generateBLI03(data) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         try {
             const doc = new pdfkit_1.default({
                 size: 'A4',
@@ -36,7 +37,7 @@ async function generateBLI03(data) {
             addHeader(doc);
             addFormContent(doc, data);
             addDeclarationSection(doc);
-            addSignatureSection(doc);
+            await addSignatureSection(doc, data.signatures);
             doc.end();
         }
         catch (error) {
@@ -122,8 +123,8 @@ function addFormContent(doc, data) {
     currentY += rowHeight;
     drawTableRow(doc, tableX, currentY, tableWidth, rowHeight, 'E-mel:', data.organization.email, col1Width);
     currentY += rowHeight;
-    drawTableRow(doc, tableX, currentY, tableWidth, rowHeight, 'Nama Pegawai Bertanggungjawab:', data.organization.contactPersonName, col1Width);
-    currentY += rowHeight;
+    drawTableRow(doc, tableX, currentY, tableWidth, 25, 'Nama Pegawai\nBertanggungjawab:', data.organization.contactPersonName, col1Width);
+    currentY += 25;
     drawTableRow(doc, tableX, currentY, tableWidth, rowHeight, 'No. Telefon Pegawai:', data.organization.contactPersonPhone, col1Width);
     currentY += rowHeight;
     return currentY;
@@ -147,26 +148,123 @@ function addDeclarationSection(doc) {
         .text('Yang Benar,', col1X, currentY);
     doc.text('Pengesahan Penyelaras Latihan Industri', col2X, currentY);
 }
-function addSignatureSection(doc) {
+async function addSignatureSection(doc, signatures) {
     const leftMargin = 60;
     const pageWidth = doc.page.width - 120;
-    let currentY = doc.y + 50;
+    let currentY = doc.y + 30;
     const col1X = leftMargin;
     const col2X = leftMargin + (pageWidth / 2) + 20;
-    doc.moveTo(col1X, currentY)
-        .lineTo(col1X + 150, currentY)
-        .stroke();
-    doc.moveTo(col2X, currentY)
-        .lineTo(col2X + 150, currentY)
-        .stroke();
-    currentY += 5;
+    const signatureAreaY = currentY;
     doc.fontSize(8)
         .font('Helvetica')
         .text('Tandatangan Pelajar', col1X, currentY);
-    doc.text('Tandatangan Penyelaras Latihan Industri', col2X, currentY);
-    currentY += 12;
-    doc.text('Tarikh:', col1X, currentY);
-    doc.text('Tarikh:', col2X, currentY);
+    currentY += 15;
+    const studentSigStartY = currentY;
+    if (signatures === null || signatures === void 0 ? void 0 : signatures.studentSignature) {
+        if (signatures.studentSignatureType === 'typed') {
+            doc.fontSize(16)
+                .font('Times-Italic')
+                .text(signatures.studentSignature, col1X, currentY);
+            currentY += 25;
+        }
+        else if (signatures.studentSignatureType === 'image' || signatures.studentSignatureType === 'drawn') {
+            try {
+                let base64Data = signatures.studentSignature;
+                if (base64Data.includes('base64,')) {
+                    base64Data = base64Data.split('base64,')[1];
+                }
+                const signatureBuffer = Buffer.from(base64Data, 'base64');
+                const processedSignature = await (0, sharp_1.default)(signatureBuffer)
+                    .trim({ background: { r: 255, g: 255, b: 255 }, threshold: 10 })
+                    .png()
+                    .toBuffer();
+                const signatureWidth = signatures.studentSignatureType === 'drawn' ? 100 : 90;
+                const signatureHeight = signatures.studentSignatureType === 'drawn' ? 40 : 35;
+                doc.image(processedSignature, col1X + 10, currentY, {
+                    width: signatureWidth,
+                    fit: [signatureWidth, signatureHeight],
+                });
+                currentY += signatureHeight + 5;
+            }
+            catch (error) {
+                console.error('Error adding student signature image:', error);
+                doc.fontSize(9)
+                    .font('Helvetica-Oblique')
+                    .text('[Signature Image]', col1X, currentY);
+                currentY += 20;
+            }
+        }
+        else {
+            doc.fontSize(9)
+                .font('Helvetica-Oblique')
+                .text('[Digital Signature]', col1X, currentY);
+            currentY += 20;
+        }
+    }
+    else {
+        doc.moveTo(col1X, currentY + 10)
+            .lineTo(col1X + 150, currentY + 10)
+            .stroke();
+        currentY += 25;
+    }
+    doc.fontSize(8)
+        .font('Helvetica')
+        .text('Tarikh: ' + ((signatures === null || signatures === void 0 ? void 0 : signatures.studentSignedAt) ? new Date(signatures.studentSignedAt).toLocaleDateString('en-MY') : '_______________'), col1X, currentY);
+    currentY = signatureAreaY;
+    doc.fontSize(8)
+        .font('Helvetica')
+        .text('Tandatangan Penyelaras Latihan Industri', col2X, currentY);
+    currentY += 15;
+    if (signatures === null || signatures === void 0 ? void 0 : signatures.coordinatorSignature) {
+        if (signatures.coordinatorSignatureType === 'typed') {
+            doc.fontSize(16)
+                .font('Times-Italic')
+                .text(signatures.coordinatorSignature, col2X, currentY);
+            currentY += 25;
+        }
+        else if (signatures.coordinatorSignatureType === 'image' || signatures.coordinatorSignatureType === 'drawn') {
+            try {
+                let base64Data = signatures.coordinatorSignature;
+                if (base64Data.includes('base64,')) {
+                    base64Data = base64Data.split('base64,')[1];
+                }
+                const signatureBuffer = Buffer.from(base64Data, 'base64');
+                const processedSignature = await (0, sharp_1.default)(signatureBuffer)
+                    .trim({ background: { r: 255, g: 255, b: 255 }, threshold: 10 })
+                    .png()
+                    .toBuffer();
+                const signatureWidth = signatures.coordinatorSignatureType === 'drawn' ? 150 : 120;
+                const signatureHeight = signatures.coordinatorSignatureType === 'drawn' ? 60 : 45;
+                doc.image(processedSignature, col2X, currentY, {
+                    width: signatureWidth,
+                    fit: [signatureWidth, signatureHeight],
+                });
+                currentY += signatureHeight + 5;
+            }
+            catch (error) {
+                console.error('Error adding coordinator signature image:', error);
+                doc.fontSize(9)
+                    .font('Helvetica-Oblique')
+                    .text('[Signature Image]', col2X, currentY);
+                currentY += 20;
+            }
+        }
+        else {
+            doc.fontSize(9)
+                .font('Helvetica-Oblique')
+                .text('[Digital Signature]', col2X, currentY);
+            currentY += 20;
+        }
+    }
+    else {
+        doc.moveTo(col2X, currentY + 10)
+            .lineTo(col2X + 150, currentY + 10)
+            .stroke();
+        currentY += 25;
+    }
+    doc.fontSize(8)
+        .font('Helvetica')
+        .text('Tarikh: ' + ((signatures === null || signatures === void 0 ? void 0 : signatures.coordinatorSignedAt) ? new Date(signatures.coordinatorSignedAt).toLocaleDateString('en-MY') : '_______________'), col2X, currentY);
 }
 function drawTableRow(doc, x, y, width, height, label, value, labelWidth) {
     doc.rect(x, y, width, height).stroke();

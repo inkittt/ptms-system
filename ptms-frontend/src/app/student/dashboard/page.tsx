@@ -144,40 +144,113 @@ export default function StudentDashboard() {
 
 
 
-        {/* Progress Tracker */}
+        {/* Application Status & Next Steps */}
         {application && (
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-6">
-            <h3 className="font-semibold text-gray-900 mb-6">Application Roadmap</h3>
-            <div className="relative">
-              <div className="absolute top-0 bottom-0 left-4 w-0.5 bg-gray-200"></div>
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-600" />
+                Application Status & Next Steps
+              </CardTitle>
+              <CardDescription>Your current progress and what to do next</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-600 mb-3">Document Progress</p>
+                  <div className="space-y-2">
+                    {/* BLI-01 */}
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <span className="text-sm font-medium text-gray-900">BLI-01</span>
+                      </div>
+                      <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700">
+                        {application.status === "APPROVED" || application.status === "SUBMITTED" ? "Approved" : application.status === "PENDING" ? "Under Review" : "Submitted"}
+                      </span>
+                    </div>
 
-              <TimelineItem
-                status="completed"
-                title="Eligibility Check"
-                desc={`System verified your credits (${student.creditsEarned}/${session?.minCredits || 113}).`}
-              />
-              <TimelineItem
-                status={application.status === "DRAFT" ? "current" : "completed"}
-                title="Submit BLI-01 Application"
-                desc="Fill personal and academic details."
-              />
-              <TimelineItem
-                status={application.status === "DRAFT" ? "upcoming" : "current"}
-                title="Upload Offer Letter (BLI-02)"
-                desc="Upload signed offer letter from company."
-              />
-              <TimelineItem
-                status="upcoming"
-                title="Coordinator Review"
-                desc="Wait for approval to generate SLI-03."
-              />
-              <TimelineItem
-                status="upcoming"
-                title="Reporting Duty (BLI-04)"
-                desc="Supervisor confirms your first day."
-              />
-            </div>
-          </div>
+                    {/* BLI-02 */}
+                    {(() => {
+                      const bli02 = application.documents?.find(d => d.type === "BLI_02");
+                      return bli02 ? (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            <span className="text-sm font-medium text-gray-900">BLI-02</span>
+                          </div>
+                          <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700">
+                            {bli02.status === "APPROVED" ? "Approved" : bli02.status === "PENDING" ? "Under Review" : "Submitted"}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50 opacity-50">
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-600">BLI-02</span>
+                          </div>
+                          <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">Not submitted</span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* BLI-03 */}
+                    {(() => {
+                      const bli03 = application.documents?.find(d => d.type === "BLI_03");
+                      return bli03 ? (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            <span className="text-sm font-medium text-gray-900">BLI-03</span>
+                          </div>
+                          <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700">
+                            {bli03.status === "APPROVED" ? "Approved" : bli03.status === "PENDING" ? "Under Review" : "Submitted"}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50 opacity-50">
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-600">BLI-03</span>
+                          </div>
+                          <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">Not submitted</span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* BLI-04 */}
+                    {(() => {
+                      const bli04 = application.documents?.find(d => d.type === "BLI_04");
+                      return bli04 ? (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            <span className="text-sm font-medium text-gray-900">BLI-04</span>
+                          </div>
+                          <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-700">
+                            {bli04.status === "APPROVED" ? "Approved" : bli04.status === "PENDING" ? "Under Review" : "Submitted"}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50 opacity-50">
+                          <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-600">BLI-04</span>
+                          </div>
+                          <span className="text-xs px-2 py-1 rounded bg-gray-200 text-gray-600">Not submitted</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+                
+                <div className="pt-3 border-t border-gray-200">
+                  <p className="text-sm font-medium text-gray-600 mb-1">Company</p>
+                  <p className="text-sm text-gray-900">{application.companyName || "Not specified"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Quick Actions */}

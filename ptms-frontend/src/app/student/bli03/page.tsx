@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Save, FileText, Download, Upload, AlertTriangle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, Save, FileText, Download, AlertTriangle, CheckCircle, Loader2, Clock } from "lucide-react";
 import Link from "next/link";
 import SessionProtectedRoute from "@/components/SessionProtectedRoute";
 import { api } from "@/lib/api";
@@ -43,8 +44,6 @@ const bli03Schema = z.object({
   // Additional fields (keeping for compatibility)
   reportingPeriod: z.string().min(1, "Reporting period is required"),
 
-  // Document Uploads
-  bli03Hardcopy: z.any().optional(),
 }).refine((data) => new Date(data.internshipStartDate) < new Date(data.internshipEndDate), {
   message: "Internship start date must be before end date",
   path: ["internshipEndDate"],
@@ -64,9 +63,20 @@ function BLI03FormPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pdfGenerated, setPdfGenerated] = useState(false);
   const [isCheckingSubmission, setIsCheckingSubmission] = useState(true);
-  const [isUploadingHardcopy, setIsUploadingHardcopy] = useState(false);
-  const [hardcopyFile, setHardcopyFile] = useState<File | null>(null);
-  const [hardcopyUploaded, setHardcopyUploaded] = useState(false);
+  const [isSubmittedToCoordinator, setIsSubmittedToCoordinator] = useState(false);
+  const [isStudentSigned, setIsStudentSigned] = useState(false);
+  const [studentSignedAt, setStudentSignedAt] = useState<string | null>(null);
+  const [coordinatorApproved, setCoordinatorApproved] = useState(false);
+  const [changesRequested, setChangesRequested] = useState(false);
+  const [coordinatorComments, setCoordinatorComments] = useState<string | null>(null);
+  
+  const [signatureType, setSignatureType] = useState<"typed" | "drawn" | "upload">("typed");
+  const [typedSignature, setTypedSignature] = useState("");
+  const [drawnSignature, setDrawnSignature] = useState("");
+  const [uploadedSignature, setUploadedSignature] = useState<File | null>(null);
+  const [uploadedSignaturePreview, setUploadedSignaturePreview] = useState<string>("");
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   const {
     register,
@@ -135,13 +145,29 @@ function BLI03FormPage() {
           // Reset form with all values to ensure isDirty works correctly
           reset(defaultValues);
           
-          // Check if hardcopy has been uploaded AND approved (not in DRAFT status)
-          const hardcopyDoc = activeApplication.documents?.find(
-            (doc: any) => doc.type === 'BLI_03_HARDCOPY'
-          );
-          // Only mark as uploaded if it exists AND is not in DRAFT status (changes requested)
-          const isHardcopyApproved = hardcopyDoc && hardcopyDoc.status !== 'DRAFT';
-          setHardcopyUploaded(isHardcopyApproved);
+          // Check if student has signed
+          if (bli03FormResponse && bli03FormResponse.studentSignedAt) {
+            setIsStudentSigned(true);
+            setStudentSignedAt(bli03FormResponse.studentSignedAt);
+          }
+          
+          // Check for coordinator approval or changes requested
+          const latestReview = activeApplication.reviews && activeApplication.reviews.length > 0
+            ? activeApplication.reviews.sort((a: any, b: any) =>
+                new Date(b.decidedAt).getTime() - new Date(a.decidedAt).getTime()
+              )[0]
+            : null;
+          
+          if (latestReview && latestReview.decision === 'REQUEST_CHANGES') {
+            setChangesRequested(true);
+            setCoordinatorComments(latestReview.comments);
+            setIsSubmittedToCoordinator(false);
+          } else if (bli03FormResponse && bli03FormResponse.verifiedBy) {
+            setCoordinatorApproved(true);
+            setIsSubmittedToCoordinator(true);
+          } else if (bli03FormResponse && bli03FormResponse.studentSignedAt) {
+            setIsSubmittedToCoordinator(true);
+          }
         }
       } catch (error) {
         console.error('Error checking submission status:', error);
@@ -153,69 +179,128 @@ function BLI03FormPage() {
     checkSubmissionStatus();
   }, [reset]);
 
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    setIsDrawing(true);
+    ctx.beginPath();
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        setDrawnSignature(canvas.toDataURL());
+      }
+      setIsDrawing(false);
+    }
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setDrawnSignature("");
+  };
+
+  const handleSignatureFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.match(/^image\/(png|jpeg|jpg)$/)) {
+      alert('Please select a PNG or JPG image file');
+      return;
+    }
+
+    // Validate file size (2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      alert('File size must be under 2MB');
+      return;
+    }
+
+    setUploadedSignature(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedSignaturePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const onSubmit = async (data: BLI03FormData) => {
+    // Validate signature based on type
+    let signature = '';
+    if (signatureType === 'typed') {
+      signature = typedSignature;
+    } else if (signatureType === 'drawn') {
+      signature = drawnSignature;
+    } else if (signatureType === 'upload') {
+      if (!uploadedSignature) {
+        alert('❌ Please upload your signature image before submitting.');
+        return;
+      }
+    }
+
+    if (!signature && signatureType !== 'upload') {
+      alert('❌ Please provide your signature before submitting.');
+      return;
+    }
+
+    const confirmSubmit = window.confirm(
+      '⚠️ Confirmation Required\n\n' +
+      'Are you ready to submit this BLI-03 form with your signature?\n\n' +
+      'By clicking OK, you confirm that:\n' +
+      '1. All information provided is accurate\n' +
+      '2. Your signature is authentic\n' +
+      '3. You agree to the organization selection declaration\n\n' +
+      'Click OK to submit, or Cancel to review.'
+    );
+
+    if (!confirmSubmit) return;
+
     setIsSubmitting(true);
     try {
-      console.log("Starting BLI03 submission...");
-      console.log("Form data:", data);
-      
-      // First, get the user's applications to find the active one
-      console.log("Fetching applications...");
       const { applications } = await api.get<{ applications: any[] }>('/applications');
-      console.log("Applications received:", applications);
-      
       const activeApplication = applications[0];
 
       if (!activeApplication) {
         throw new Error('No active application found. Please create an application (BLI-01) first before submitting BLI-03.');
       }
 
-      console.log("Active application:", activeApplication);
-      console.log("Application ID:", activeApplication.id);
+      const token = localStorage.getItem('accessToken');
 
-      // Safety guard: If hardcopy is already uploaded/pending, do not allow re-submission of online form
-      // unless we explicitly want to allow updates (which should probably require a distinct action)
-      if (hardcopyUploaded) {
-        console.log("Hardcopy already uploaded, preventing form re-submission");
-        return;
-      }
-
-      // Submit BLI03 data to backend (first time submission or resubmission)
-      // Only patch if form is dirty or not yet generated
-      if (!pdfGenerated || isDirty) {
-        console.log("Submitting BLI03 data to application ID:", activeApplication.id);
-        const result = await api.patch(`/applications/${activeApplication.id}/bli03`, {
-          studentPhone: data.studentPhone,
-          studentEmail: data.studentEmail,
-          startDate: data.internshipStartDate,
-          endDate: data.internshipEndDate,
-          organizationName: data.organizationName,
-          organizationAddress: data.organizationAddress,
-          organizationPhone: data.organizationPhone,
-          organizationFax: data.organizationFax,
-          organizationEmail: data.organizationEmail,
-          contactPersonName: data.contactPersonName,
-          contactPersonPhone: data.contactPersonPhone,
-          organizationDeclaration: data.organizationDeclaration,
-          reportingPeriod: data.reportingPeriod,
-        });
-
-        console.log("BLI-03 data saved successfully:", result);
-        setPdfGenerated(true);
-      } else {
-        console.log("Form data not changed, skipping BLI03 update");
-      }
-
-      // If hardcopy file is selected, upload it automatically
-      if (hardcopyFile && !hardcopyUploaded) {
-        console.log("Uploading hardcopy file...");
+      // If upload type, first upload the signature image
+      if (signatureType === 'upload' && uploadedSignature) {
         const formData = new FormData();
-        formData.append('file', hardcopyFile);
-        formData.append('applicationId', activeApplication.id);
-        formData.append('documentType', 'BLI_03_HARDCOPY');
+        formData.append('signature', uploadedSignature);
 
-        const token = localStorage.getItem('accessToken');
-        const uploadResponse = await fetch(`http://localhost:3000/api/applications/${activeApplication.id}/documents/upload`, {
+        const uploadResponse = await fetch(`http://localhost:3000/api/applications/${activeApplication.id}/upload-signature`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -224,21 +309,81 @@ function BLI03FormPage() {
         });
 
         if (!uploadResponse.ok) {
-          const errorData = await uploadResponse.json();
-          throw new Error(errorData.message || 'Failed to upload hardcopy');
+          throw new Error('Failed to upload signature image');
         }
 
-        const uploadResult = await uploadResponse.json();
-        console.log('Hardcopy uploaded successfully:', uploadResult);
-        setHardcopyUploaded(true);
-        alert("✅ BLI-03 Progress Report and Hardcopy submitted successfully!\n\nYour coordinator will review it shortly.");
+        // After successful upload, submit the form without signature data
+        // (signature is already saved in the database)
+        const response = await fetch(`http://localhost:3000/api/applications/${activeApplication.id}/bli03/submit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            studentPhone: data.studentPhone,
+            studentEmail: data.studentEmail,
+            startDate: data.internshipStartDate,
+            endDate: data.internshipEndDate,
+            organizationName: data.organizationName,
+            organizationAddress: data.organizationAddress,
+            organizationPhone: data.organizationPhone,
+            organizationFax: data.organizationFax,
+            organizationEmail: data.organizationEmail,
+            contactPersonName: data.contactPersonName,
+            contactPersonPhone: data.contactPersonPhone,
+            organizationDeclaration: data.organizationDeclaration,
+            reportingPeriod: data.reportingPeriod,
+            studentSignature: '', // Already uploaded
+            studentSignatureType: 'image',
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to submit BLI-03 form');
+        }
       } else {
-        alert("✅ BLI-03 Progress Report submitted successfully!\n\nYou can now download the PDF, print it, sign it, and upload the hardcopy.");
+        // For typed or drawn signatures
+        const response = await fetch(`http://localhost:3000/api/applications/${activeApplication.id}/bli03/submit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            studentPhone: data.studentPhone,
+            studentEmail: data.studentEmail,
+            startDate: data.internshipStartDate,
+            endDate: data.internshipEndDate,
+            organizationName: data.organizationName,
+            organizationAddress: data.organizationAddress,
+            organizationPhone: data.organizationPhone,
+            organizationFax: data.organizationFax,
+            organizationEmail: data.organizationEmail,
+            contactPersonName: data.contactPersonName,
+            contactPersonPhone: data.contactPersonPhone,
+            organizationDeclaration: data.organizationDeclaration,
+            reportingPeriod: data.reportingPeriod,
+            studentSignature: signature,
+            studentSignatureType: signatureType,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to submit BLI-03 form');
+        }
       }
+
+      alert(changesRequested
+        ? '✅ BLI-03 form resubmitted successfully!\n\nYour coordinator will review your updated submission.'
+        : '✅ BLI-03 form submitted successfully!\n\nYour coordinator will review and sign it shortly.');
+      window.location.reload();
     } catch (error) {
       console.error("Error submitting form:", error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      alert(`❌ Error submitting form:\n\n${errorMessage}\n\nPlease check the console for more details.`);
+      alert(`❌ Error submitting form:\n\n${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -277,60 +422,13 @@ function BLI03FormPage() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      alert("✅ BLI-03 PDF downloaded successfully!\n\nPlease print, sign, and upload the hardcopy.");
+      alert("✅ BLI-03 PDF downloaded successfully!");
     } catch (error) {
       console.error('Error downloading PDF:', error);
       alert('Failed to download BLI-03 PDF. Please make sure you have submitted the form first.');
     }
   };
 
-  const handleHardcopyUpload = async () => {
-    if (!hardcopyFile) {
-      alert('Please select a file to upload');
-      return;
-    }
-
-    setIsUploadingHardcopy(true);
-    try {
-      // Get the user's applications to find the active one
-      const { applications } = await api.get<{ applications: any[] }>('/applications');
-      const activeApplication = applications[0];
-
-      if (!activeApplication) {
-        throw new Error('No active application found. Please submit the BLI-03 form first.');
-      }
-
-      // Create FormData for file upload
-      const formData = new FormData();
-      formData.append('file', hardcopyFile);
-      formData.append('documentType', 'BLI_03_HARDCOPY');
-
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`http://localhost:3000/api/applications/${activeApplication.id}/documents/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to upload hardcopy');
-      }
-
-      const result = await response.json();
-      console.log('Hardcopy uploaded successfully:', result);
-      
-      setHardcopyUploaded(true);
-      alert('✅ BLI-03 Hardcopy uploaded successfully!\n\nYour coordinator will review it shortly.');
-    } catch (error) {
-      console.error('Error uploading hardcopy:', error);
-      alert(`❌ Error uploading hardcopy:\n\n${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsUploadingHardcopy(false);
-    }
-  };
 
   return (
     <main className="flex-1 p-8">
@@ -347,6 +445,69 @@ function BLI03FormPage() {
         <h1 className="text-3xl font-bold text-gray-900">BLI-03 Form</h1>
         <p className="text-gray-600">Internship Progress Report</p>
       </div>
+
+      {/* Status Banners */}
+      {changesRequested && (
+        <div className="max-w-4xl mx-auto mb-6">
+          <Card className="border-orange-200 bg-orange-50">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <div className="flex-shrink-0">
+                  <div className="h-6 w-6 rounded-full bg-orange-600 flex items-center justify-center text-white font-bold">!</div>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-orange-900">Changes Requested by Coordinator</h3>
+                  <p className="text-sm text-orange-700 mt-1">
+                    The coordinator has reviewed your BLI-03 submission and requested changes.
+                  </p>
+                  {coordinatorComments && (
+                    <div className="mt-3 p-3 bg-white rounded border border-orange-200">
+                      <p className="text-sm font-medium text-gray-700">Coordinator's Comments:</p>
+                      <p className="text-sm text-gray-600 mt-1">{coordinatorComments}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {isSubmittedToCoordinator && !changesRequested && !coordinatorApproved && (
+        <div className="max-w-4xl mx-auto mb-6">
+          <Card className="border-blue-200 bg-blue-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <Clock className="h-6 w-6 text-blue-600" />
+                <div>
+                  <h3 className="font-semibold text-blue-900">Pending Coordinator Review</h3>
+                  <p className="text-sm text-blue-700">
+                    Your BLI-03 form has been submitted and is awaiting coordinator review and signature.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {coordinatorApproved && (
+        <div className="max-w-4xl mx-auto mb-6">
+          <Card className="border-green-200 bg-green-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3">
+                <CheckCircle className="h-6 w-6 text-green-600" />
+                <div>
+                  <h3 className="font-semibold text-green-900">Approved by Coordinator</h3>
+                  <p className="text-sm text-green-700">
+                    Your BLI-03 form has been approved and signed by the coordinator.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="max-w-4xl mx-auto space-y-6">
         {/* Validation Errors Display */}
@@ -369,14 +530,6 @@ function BLI03FormPage() {
             </CardContent>
           </Card>
         )}
-
-        <Tabs defaultValue="online-form" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="online-form">Online Form</TabsTrigger>
-            <TabsTrigger value="hardcopy-upload">Hardcopy Scan Upload</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="online-form" className="space-y-6">
             {/* A. Student Information Section (BUTIRAN PELAJAR) */}
         <Card>
           <CardHeader>
@@ -603,58 +756,86 @@ function BLI03FormPage() {
           </CardContent>
         </Card>
 
-          </TabsContent>
+        {/* Student Signature Section */}
+        {!isStudentSigned && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Student Signature</CardTitle>
+              <CardDescription>
+                Please provide your signature to confirm the accuracy of the information above
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label>Signature Type</Label>
+                <Tabs value={signatureType} onValueChange={(v) => setSignatureType(v as "typed" | "drawn" | "upload")} className="mt-2">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="typed">Typed Signature</TabsTrigger>
+                    <TabsTrigger value="drawn">Draw Signature</TabsTrigger>
+                    <TabsTrigger value="upload">Upload Image</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="typed" className="space-y-2">
+                    <Input
+                      value={typedSignature}
+                      onChange={(e) => setTypedSignature(e.target.value)}
+                      placeholder="Type your full name"
+                      className="font-serif text-2xl"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Your typed name will serve as your electronic signature
+                    </p>
+                  </TabsContent>
+                  
+                  <TabsContent value="drawn" className="space-y-2">
+                    <div className="border-2 border-gray-300 rounded-lg bg-white">
+                      <canvas
+                        ref={canvasRef}
+                        width={600}
+                        height={200}
+                        className="w-full cursor-crosshair"
+                        onMouseDown={startDrawing}
+                        onMouseMove={draw}
+                        onMouseUp={stopDrawing}
+                        onMouseLeave={stopDrawing}
+                      />
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={clearSignature}>
+                      Clear Signature
+                    </Button>
+                    <p className="text-xs text-gray-500">
+                      Draw your signature using your mouse or touchscreen
+                    </p>
+                  </TabsContent>
 
-          <TabsContent value="hardcopy-upload" className="space-y-6">
-            {/* Hardcopy Scan Upload Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Hardcopy Scan Upload</CardTitle>
-                <CardDescription>Generate PDF, print, sign, and upload the scanned copy of your BLI-03 form</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-center mb-4">
-                  <Button onClick={handleDownloadPDF} variant="outline" disabled={!pdfGenerated}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Download BLI-03 PDF
-                  </Button>
-                </div>
-                {!pdfGenerated && (
-                  <p className="text-sm text-center text-gray-600">
-                    Submit the form first to enable PDF download
-                  </p>
-                )}
-                {pdfGenerated && (
-                  <p className="text-sm text-center text-green-600">
-                    ✓ Form submitted! You can now download the PDF
-                  </p>
-                )}
-                <div>
-                  <Label htmlFor="bli03Hardcopy">BLI-03 Hardcopy Scan (PDF/JPG/PNG)</Label>
-                  <Input
-                    id="bli03Hardcopy"
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setHardcopyFile(file);
-                      }
-                    }}
-                    disabled={!pdfGenerated || hardcopyUploaded}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Scan and upload signed BLI-03 hardcopy (max 10MB)</p>
-                  {!pdfGenerated && (
-                    <p className="text-xs text-orange-600 mt-1">Submit the form and download PDF first</p>
-                  )}
-                  {hardcopyUploaded && (
-                    <p className="text-xs text-green-600 mt-1">✓ Hardcopy already uploaded</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                  <TabsContent value="upload" className="space-y-2">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 bg-gray-50">
+                      <Input
+                        type="file"
+                        accept="image/png,image/jpeg,image/jpg"
+                        onChange={handleSignatureFileChange}
+                        className="mb-2"
+                      />
+                      {uploadedSignaturePreview && (
+                        <div className="mt-4">
+                          <p className="text-sm text-gray-600 mb-2">Preview:</p>
+                          <img 
+                            src={uploadedSignaturePreview} 
+                            alt="Signature preview" 
+                            className="max-w-md border rounded-lg p-2 bg-white"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Upload a PNG or JPG image of your signature (max 2MB)
+                    </p>
+                  </TabsContent>
+                </Tabs>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Submit Button */}
         <div className="flex justify-end gap-4">
@@ -663,18 +844,27 @@ function BLI03FormPage() {
               Cancel
             </Button>
           </Link>
-          <Button type="submit" disabled={isSubmitting || isCheckingSubmission || hardcopyUploaded}>
-            {isSubmitting ? (
-              "Submitting..."
-            ) : hardcopyUploaded ? (
-              "Submitted"
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-2" />
-                Submit Progress Report
-              </>
-            )}
-          </Button>
+          {coordinatorApproved && (
+            <Button onClick={handleDownloadPDF} variant="outline" type="button">
+              <Download className="h-4 w-4 mr-2" />
+              Download Approved PDF
+            </Button>
+          )}
+          {!isSubmittedToCoordinator && (
+            <Button type="submit" disabled={isSubmitting || isCheckingSubmission}>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  {changesRequested ? 'Resubmit with Signature' : 'Submit with Signature'}
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </form>
     </main>

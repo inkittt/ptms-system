@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import * as RadixDialog from "@radix-ui/react-dialog";
 const Dialog = RadixDialog.Root;
 const DialogTrigger = RadixDialog.Trigger;
@@ -23,7 +24,7 @@ const DialogHeader = ({ children, className = "", ...props }: any) => (
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Plus, Edit, Trash2, Calendar, Users, Clock, Upload, CheckCircle, XCircle, Download } from "lucide-react";
+import { Plus, Edit, Trash2, Calendar, Users, Clock, Upload, CheckCircle, XCircle, Download, PenTool } from "lucide-react";
 import { sessionsApi, Session, ImportResult } from "@/lib/api/sessions";
 import { authService } from "@/lib/auth";
 
@@ -33,6 +34,8 @@ const sessionSchema = z.object({
   description: z.string().optional(),
   year: z.string().min(4, "Year must be 4 digits"),
   semester: z.enum(["1", "2"], { required_error: "Please select a semester" }),
+  trainingStartDate: z.string().optional(),
+  trainingEndDate: z.string().optional(),
   minCredits: z.number().min(1, "Minimum credits must be at least 1"),
   minWeeks: z.number().min(1, "Minimum weeks must be at least 1"),
   maxWeeks: z.number().min(1, "Maximum weeks must be at least 1"),
@@ -42,6 +45,14 @@ const sessionSchema = z.object({
 }).refine((data) => data.minWeeks <= data.maxWeeks, {
   message: "Minimum weeks cannot be greater than maximum weeks",
   path: ["minWeeks"],
+}).refine((data) => {
+  if (data.trainingStartDate && data.trainingEndDate) {
+    return new Date(data.trainingStartDate) <= new Date(data.trainingEndDate);
+  }
+  return true;
+}, {
+  message: "Training start date cannot be after training end date",
+  path: ["trainingStartDate"],
 });
 
 type SessionFormData = z.infer<typeof sessionSchema>;
@@ -60,6 +71,14 @@ export default function SessionsPage() {
   const [programs, setPrograms] = useState<string[]>([]);
   const [selectedExportProgram, setSelectedExportProgram] = useState("ALL");
   const [isExporting, setIsExporting] = useState(false);
+  
+  const [signatureType, setSignatureType] = useState<"typed" | "drawn" | "upload">("typed");
+  const [typedSignature, setTypedSignature] = useState("");
+  const [drawnSignature, setDrawnSignature] = useState("");
+  const [uploadedSignature, setUploadedSignature] = useState<File | null>(null);
+  const [uploadedSignaturePreview, setUploadedSignaturePreview] = useState<string>("");
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
 
   const form = useForm<SessionFormData>({
     resolver: zodResolver(sessionSchema),
@@ -68,6 +87,8 @@ export default function SessionsPage() {
       description: "",
       year: new Date().getFullYear().toString(),
       semester: "1",
+      trainingStartDate: "",
+      trainingEndDate: "",
       minCredits: 113,
       minWeeks: 8,
       maxWeeks: 14,
@@ -84,6 +105,8 @@ export default function SessionsPage() {
       description: "",
       year: new Date().getFullYear().toString(),
       semester: "1",
+      trainingStartDate: "",
+      trainingEndDate: "",
       minCredits: 113,
       minWeeks: 8,
       maxWeeks: 14,
@@ -97,6 +120,76 @@ export default function SessionsPage() {
     fetchSessions();
     fetchPrograms();
   }, []);
+
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    setIsDrawing(true);
+    ctx.beginPath();
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  };
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    if (isDrawing) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        setDrawnSignature(canvas.toDataURL());
+      }
+      setIsDrawing(false);
+    }
+  };
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setDrawnSignature("");
+  };
+
+  const handleSignatureFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.match(/^image\/(png|jpeg|jpg)$/)) {
+      alert('Please select a PNG or JPG image file');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('File size must be under 2MB');
+      return;
+    }
+
+    setUploadedSignature(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedSignaturePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const fetchPrograms = async () => {
     try {
@@ -169,11 +262,31 @@ export default function SessionsPage() {
     const token = authService.getAccessToken();
     if (!token) return;
 
+    let signature = '';
+    if (signatureType === 'typed') {
+      signature = typedSignature;
+    } else if (signatureType === 'drawn') {
+      signature = drawnSignature;
+    } else if (signatureType === 'upload') {
+      if (!uploadedSignature) {
+        alert('Please upload your signature image before creating the session.');
+        return;
+      }
+    }
+
+    if (!signature && signatureType !== 'upload') {
+      alert('Please provide your signature before creating the session.');
+      return;
+    }
+
     try {
-      await sessionsApi.create({
+      // First create the session
+      const createdSession = await sessionsApi.create({
         name: data.name || `${data.year} Semester ${data.semester}`,
         year: parseInt(data.year),
         semester: parseInt(data.semester),
+        trainingStartDate: data.trainingStartDate || undefined,
+        trainingEndDate: data.trainingEndDate || undefined,
         minCredits: data.minCredits,
         minWeeks: data.minWeeks,
         maxWeeks: data.maxWeeks,
@@ -182,10 +295,36 @@ export default function SessionsPage() {
           bli03Deadline: data.bli03Deadline,
           reportingDeadline: data.reportingDeadline,
         },
+        coordinatorSignature: signatureType === 'upload' ? '' : signature,
+        coordinatorSignatureType: signatureType === 'upload' ? 'image' : signatureType,
       }, token);
+
+      // If upload type, upload the signature image
+      if (signatureType === 'upload' && uploadedSignature && createdSession.id) {
+        const formData = new FormData();
+        formData.append('signature', uploadedSignature);
+
+        const uploadResponse = await fetch(`http://localhost:3000/api/sessions/${createdSession.id}/upload-coordinator-signature`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: formData,
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to upload signature image');
+        }
+      }
+
       await fetchSessions();
       setIsCreateDialogOpen(false);
       form.reset();
+      setTypedSignature("");
+      setDrawnSignature("");
+      setUploadedSignature(null);
+      setUploadedSignaturePreview("");
+      clearSignature();
     } catch (err: any) {
       alert(err.response?.data?.message || "Failed to create session");
     }
@@ -216,6 +355,8 @@ export default function SessionsPage() {
         name: data.name || `${data.year} Semester ${data.semester}`,
         year: parseInt(data.year),
         semester: parseInt(data.semester),
+        trainingStartDate: data.trainingStartDate || undefined,
+        trainingEndDate: data.trainingEndDate || undefined,
         minCredits: data.minCredits,
         minWeeks: data.minWeeks,
         maxWeeks: data.maxWeeks,
@@ -433,6 +574,39 @@ export default function SessionsPage() {
                     )}
                   </div>
                   </div>
+
+                  {/* Training Period */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Intern Start Date (Optional)</Label>
+                      <Controller
+                        control={form.control}
+                        name="trainingStartDate"
+                        render={({ field }) => (
+                          <Input type="date" {...field} />
+                        )}
+                      />
+                      {form.formState.errors.trainingStartDate && (
+                        <p className="text-sm text-red-600 mt-1">{(form.formState.errors.trainingStartDate as any).message}</p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">Expected start date for internship training (DD/MM/YYYY)</p>
+                    </div>
+
+                    <div>
+                      <Label>Intern End Date (Optional)</Label>
+                      <Controller
+                        control={form.control}
+                        name="trainingEndDate"
+                        render={({ field }) => (
+                          <Input type="date" {...field} />
+                        )}
+                      />
+                      {form.formState.errors.trainingEndDate && (
+                        <p className="text-sm text-red-600 mt-1">{(form.formState.errors.trainingEndDate as any).message}</p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">Expected end date for internship training (DD/MM/YYYY)</p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Requirements */}
@@ -546,6 +720,84 @@ export default function SessionsPage() {
                   </div>
                 </div>
 
+                {/* Coordinator Signature */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-gray-900 border-b pb-2 flex items-center gap-2">
+                    <PenTool className="h-4 w-4" />
+                    Coordinator Signature *
+                  </h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Signature Type</Label>
+                      <Tabs value={signatureType} onValueChange={(v) => setSignatureType(v as "typed" | "drawn" | "upload")} className="mt-2">
+                        <TabsList className="grid w-full grid-cols-3">
+                          <TabsTrigger value="typed">Typed Signature</TabsTrigger>
+                          <TabsTrigger value="drawn">Draw Signature</TabsTrigger>
+                          <TabsTrigger value="upload">Upload Image</TabsTrigger>
+                        </TabsList>
+                        
+                        <TabsContent value="typed" className="space-y-2">
+                          <Input
+                            placeholder="Type your full name as signature"
+                            value={typedSignature}
+                            onChange={(e) => setTypedSignature(e.target.value)}
+                            className="font-serif text-2xl"
+                          />
+                          <p className="text-xs text-gray-500">
+                            Type your full name as it should appear on the session record
+                          </p>
+                        </TabsContent>
+                        
+                        <TabsContent value="drawn" className="space-y-2">
+                          <div className="border-2 border-gray-300 rounded-lg bg-white">
+                            <canvas
+                              ref={canvasRef}
+                              width={600}
+                              height={200}
+                              className="w-full cursor-crosshair"
+                              onMouseDown={startDrawing}
+                              onMouseMove={draw}
+                              onMouseUp={stopDrawing}
+                              onMouseLeave={stopDrawing}
+                            />
+                          </div>
+                          <Button type="button" variant="outline" size="sm" onClick={clearSignature}>
+                            Clear Signature
+                          </Button>
+                          <p className="text-xs text-gray-500">
+                            Draw your signature using your mouse or touchscreen
+                          </p>
+                        </TabsContent>
+
+                        <TabsContent value="upload" className="space-y-2">
+                          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 bg-gray-50">
+                            <Input
+                              type="file"
+                              accept="image/png,image/jpeg,image/jpg"
+                              onChange={handleSignatureFileChange}
+                              className="mb-2"
+                            />
+                            {uploadedSignaturePreview && (
+                              <div className="mt-4">
+                                <p className="text-sm text-gray-600 mb-2">Preview:</p>
+                                <img 
+                                  src={uploadedSignaturePreview} 
+                                  alt="Signature preview" 
+                                  className="max-w-md border rounded-lg p-2 bg-white"
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            Upload a PNG or JPG image of your signature (max 2MB)
+                          </p>
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-3 pt-4 border-t">
                   <Button
                     type="button"
@@ -622,6 +874,8 @@ export default function SessionsPage() {
                                 description: "",
                                 year: session.year.toString(),
                                 semester: session.semester.toString() as "1" | "2",
+                                trainingStartDate: session.trainingStartDate ? new Date(session.trainingStartDate).toISOString().split('T')[0] : "",
+                                trainingEndDate: session.trainingEndDate ? new Date(session.trainingEndDate).toISOString().split('T')[0] : "",
                                 minCredits: session.minCredits,
                                 minWeeks: session.minWeeks,
                                 maxWeeks: session.maxWeeks,
@@ -828,6 +1082,39 @@ export default function SessionsPage() {
                     <p className="text-sm text-red-600">{(editForm.formState.errors.semester as any).message}</p>
                   )}
                 </div>
+                </div>
+
+                {/* Training Period */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Intern Start Date (Optional)</Label>
+                    <Controller
+                      control={editForm.control}
+                      name="trainingStartDate"
+                      render={({ field }) => (
+                        <Input type="date" {...field} />
+                      )}
+                    />
+                    {editForm.formState.errors.trainingStartDate && (
+                      <p className="text-sm text-red-600 mt-1">{(editForm.formState.errors.trainingStartDate as any).message}</p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Expected start date for internship training (DD/MM/YYYY)</p>
+                  </div>
+
+                  <div>
+                    <Label>Intern End Date (Optional)</Label>
+                    <Controller
+                      control={editForm.control}
+                      name="trainingEndDate"
+                      render={({ field }) => (
+                        <Input type="date" {...field} />
+                      )}
+                    />
+                    {editForm.formState.errors.trainingEndDate && (
+                      <p className="text-sm text-red-600 mt-1">{(editForm.formState.errors.trainingEndDate as any).message}</p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Expected end date for internship training (DD/MM/YYYY)</p>
+                  </div>
                 </div>
               </div>
 

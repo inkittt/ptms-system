@@ -28,8 +28,10 @@ export declare class StudentsController {
         application: {
             id: any;
             status: any;
+            companyName: any;
             createdAt: any;
             updatedAt: any;
+            documents: any;
         };
     }>;
     exportCsv(program: string, res: Response): Promise<void>;

@@ -22,10 +22,13 @@ const create_application_dto_1 = require("./dto/create-application.dto");
 const upload_document_dto_1 = require("./dto/upload-document.dto");
 const review_document_dto_1 = require("./dto/review-document.dto");
 const update_bli03_dto_1 = require("./dto/update-bli03.dto");
+const submit_bli03_dto_1 = require("./dto/submit-bli03.dto");
+const approve_bli03_dto_1 = require("./dto/approve-bli03.dto");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const roles_guard_1 = require("../auth/guards/roles.guard");
 const roles_decorator_1 = require("../auth/decorators/roles.decorator");
 const current_user_decorator_1 = require("../auth/decorators/current-user.decorator");
+const public_decorator_1 = require("../auth/decorators/public.decorator");
 const client_1 = require("@prisma/client");
 let ApplicationsController = class ApplicationsController {
     constructor(applicationsService) {
@@ -120,6 +123,25 @@ let ApplicationsController = class ApplicationsController {
         const document = await this.applicationsService.getDocumentById(documentId, coordinatorId);
         return { document };
     }
+    async downloadUploadedDocument(user, documentId, res) {
+        const fileBuffer = await this.applicationsService.downloadUploadedDocument(documentId, user.userId);
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="document-${documentId}.pdf"`,
+            'Content-Length': fileBuffer.length,
+        });
+        return new common_1.StreamableFile(fileBuffer);
+    }
+    async downloadAllStudentDocuments(user, userId, res) {
+        const { stream, studentName, matricNo } = await this.applicationsService.downloadAllStudentDocumentsAsZip(userId, user.userId);
+        const sanitizedName = studentName.replace(/[^a-zA-Z0-9]/g, '_');
+        const filename = `${sanitizedName}_${matricNo}_Documents.zip`;
+        res.set({
+            'Content-Type': 'application/zip',
+            'Content-Disposition': `attachment; filename="${filename}"`,
+        });
+        stream.pipe(res);
+    }
     async reviewDocument(user, documentId, reviewDto) {
         const review = await this.applicationsService.reviewDocument(documentId, user.userId, reviewDto);
         return {
@@ -158,6 +180,57 @@ let ApplicationsController = class ApplicationsController {
     async getStudentDocuments(user, applicationId) {
         const documents = await this.applicationsService.getStudentDocuments(applicationId, user.userId);
         return { documents };
+    }
+    async downloadStudentDocument(user, applicationId, documentId, res) {
+        const fileBuffer = await this.applicationsService.downloadStudentDocument(applicationId, documentId, user.userId);
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename="document-${documentId}.pdf"`,
+            'Content-Length': fileBuffer.length,
+        });
+        return new common_1.StreamableFile(fileBuffer);
+    }
+    async saveBli04Draft(user, applicationId, bli04Data) {
+        const formResponse = await this.applicationsService.saveBli04Draft(applicationId, user.userId, bli04Data);
+        return {
+            message: 'BLI-04 draft saved successfully',
+            formResponse,
+        };
+    }
+    async generateSupervisorLink(user, applicationId) {
+        const linkData = await this.applicationsService.generateSupervisorLink(applicationId, user.userId);
+        return Object.assign({ message: 'Supervisor link generated successfully' }, linkData);
+    }
+    async getBli04Submissions(user, sessionId, program) {
+        const submissions = await this.applicationsService.getBli04Submissions(user.userId, { sessionId, program });
+        return { submissions };
+    }
+    async verifyBli04Submission(user, applicationId, verifyDto) {
+        const review = await this.applicationsService.verifyBli04Submission(applicationId, user.userId, verifyDto.decision, verifyDto.comments);
+        return {
+            message: 'BLI-04 submission verified successfully',
+            review,
+        };
+    }
+    async submitBli03WithSignature(user, applicationId, submitBli03Dto) {
+        const result = await this.applicationsService.submitBli03WithSignature(applicationId, user.userId, submitBli03Dto);
+        return result;
+    }
+    async approveBli03Submission(user, applicationId, approveBli03Dto) {
+        const result = await this.applicationsService.approveBli03Submission(applicationId, user.userId, approveBli03Dto);
+        return result;
+    }
+    async getDocumentUnlockStatus(user, applicationId) {
+        const unlockData = await this.applicationsService.getDocumentUnlockStatus(applicationId, user.userId);
+        return unlockData;
+    }
+    async uploadStudentSignature(user, applicationId, file) {
+        const result = await this.applicationsService.uploadStudentSignature(applicationId, user.userId, file);
+        return Object.assign({ message: 'Signature uploaded successfully' }, result);
+    }
+    async uploadSupervisorSignature(applicationId, file, token) {
+        const result = await this.applicationsService.uploadSupervisorSignature(applicationId, file, token);
+        return Object.assign({ message: 'Supervisor signature uploaded successfully' }, result);
     }
 };
 exports.ApplicationsController = ApplicationsController;
@@ -203,8 +276,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ApplicationsController.prototype, "getApplicationById", null);
 __decorate([
-    (0, common_1.Get)(':id/bli01/pdf'),
-    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    (0, common_1.Get)(':id/bli-01/pdf'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT, client_1.UserRole.COORDINATOR),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Res)({ passthrough: true })),
@@ -213,8 +286,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ApplicationsController.prototype, "generateBLI01PDF", null);
 __decorate([
-    (0, common_1.Get)(':id/bli03/pdf'),
-    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    (0, common_1.Get)(':id/bli-03/pdf'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT, client_1.UserRole.COORDINATOR),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Res)({ passthrough: true })),
@@ -223,8 +296,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ApplicationsController.prototype, "generateBLI03PDF", null);
 __decorate([
-    (0, common_1.Get)(':id/sli03/pdf'),
-    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    (0, common_1.Get)(':id/sli-03/pdf'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT, client_1.UserRole.COORDINATOR),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Res)({ passthrough: true })),
@@ -233,8 +306,8 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ApplicationsController.prototype, "generateSLI03PDF", null);
 __decorate([
-    (0, common_1.Get)(':id/dli01/pdf'),
-    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    (0, common_1.Get)(':id/dli-01/pdf'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT, client_1.UserRole.COORDINATOR),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Res)({ passthrough: true })),
@@ -243,7 +316,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ApplicationsController.prototype, "generateDLI01PDF", null);
 __decorate([
-    (0, common_1.Get)(':id/bli04/pdf'),
+    (0, common_1.Get)(':id/bli-04/pdf'),
     (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT, client_1.UserRole.COORDINATOR),
     __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __param(1, (0, common_1.Param)('id')),
@@ -302,6 +375,26 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], ApplicationsController.prototype, "getDocument", null);
+__decorate([
+    (0, common_1.Get)('documents/:documentId/download'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('documentId')),
+    __param(2, (0, common_1.Res)({ passthrough: true })),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "downloadUploadedDocument", null);
+__decorate([
+    (0, common_1.Get)('students/:userId/documents/download-all'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('userId')),
+    __param(2, (0, common_1.Res)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "downloadAllStudentDocuments", null);
 __decorate([
     (0, common_1.Patch)('documents/:documentId/review'),
     (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR),
@@ -371,6 +464,143 @@ __decorate([
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], ApplicationsController.prototype, "getStudentDocuments", null);
+__decorate([
+    (0, common_1.Get)(':id/documents/:documentId/download'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Param)('documentId')),
+    __param(3, (0, common_1.Res)({ passthrough: true })),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String, Object]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "downloadStudentDocument", null);
+__decorate([
+    (0, common_1.Post)(':id/bli04/save'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "saveBli04Draft", null);
+__decorate([
+    (0, common_1.Post)(':id/bli04/generate-link'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "generateSupervisorLink", null);
+__decorate([
+    (0, common_1.Get)('bli04/submissions'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Query)('sessionId')),
+    __param(2, (0, common_1.Query)('program')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "getBli04Submissions", null);
+__decorate([
+    (0, common_1.Post)('bli04/submissions/:id/verify'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "verifyBli04Submission", null);
+__decorate([
+    (0, common_1.Post)(':id/bli03/submit'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, submit_bli03_dto_1.SubmitBli03Dto]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "submitBli03WithSignature", null);
+__decorate([
+    (0, common_1.Post)('bli03/submissions/:id/approve'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.COORDINATOR),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, approve_bli03_dto_1.ApproveBli03Dto]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "approveBli03Submission", null);
+__decorate([
+    (0, common_1.Get)(':id/unlock-status'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "getDocumentUnlockStatus", null);
+__decorate([
+    (0, common_1.Post)(':id/upload-signature'),
+    (0, roles_decorator_1.Roles)(client_1.UserRole.STUDENT),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('signature', {
+        storage: (0, multer_1.diskStorage)({
+            destination: './uploads/signatures',
+            filename: (req, file, cb) => {
+                const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+                const ext = (0, path_1.extname)(file.originalname);
+                cb(null, `signature-${uniqueSuffix}${ext}`);
+            },
+        }),
+        fileFilter: (req, file, cb) => {
+            if (!file.originalname.match(/\.(png|jpg|jpeg)$/i)) {
+                return cb(new Error('Only PNG and JPG image files are allowed for signatures'), false);
+            }
+            cb(null, true);
+        },
+        limits: {
+            fileSize: 2 * 1024 * 1024,
+        },
+    })),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.UploadedFile)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "uploadStudentSignature", null);
+__decorate([
+    (0, common_1.Post)(':id/upload-supervisor-signature'),
+    (0, public_decorator_1.Public)(),
+    (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('signature', {
+        storage: (0, multer_1.diskStorage)({
+            destination: './uploads/signatures',
+            filename: (req, file, cb) => {
+                const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+                const ext = (0, path_1.extname)(file.originalname);
+                cb(null, `supervisor-signature-${uniqueSuffix}${ext}`);
+            },
+        }),
+        fileFilter: (req, file, cb) => {
+            if (!file.originalname.match(/\.(png|jpg|jpeg)$/i)) {
+                return cb(new Error('Only PNG and JPG image files are allowed for signatures'), false);
+            }
+            cb(null, true);
+        },
+        limits: {
+            fileSize: 2 * 1024 * 1024,
+        },
+    })),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.UploadedFile)()),
+    __param(2, (0, common_1.Query)('token')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, String]),
+    __metadata("design:returntype", Promise)
+], ApplicationsController.prototype, "uploadSupervisorSignature", null);
 exports.ApplicationsController = ApplicationsController = __decorate([
     (0, common_1.Controller)('applications'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),

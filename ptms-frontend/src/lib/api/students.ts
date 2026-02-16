@@ -29,8 +29,15 @@ export interface StudentDashboardData {
   application: {
     id: string;
     status: string;
+    companyName?: string;
     createdAt: string;
     updatedAt: string;
+    documents: Array<{
+      id: string;
+      type: string;
+      status: string;
+      createdAt: string;
+    }>;
   } | null;
 }
 
@@ -181,6 +188,14 @@ export const studentsApi = {
   async getStudentDetails(token: string, studentId: string): Promise<StudentDetails> {
     const response = await axios.get(`${API_URL}/students/coordinator/students/${studentId}?id=${studentId}`, {
       headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+
+  async downloadAllStudentDocuments(token: string, studentId: string): Promise<Blob> {
+    const response = await axios.get(`${API_URL}/applications/students/${studentId}/documents/download-all`, {
+      headers: { Authorization: `Bearer ${token}` },
+      responseType: 'blob',
     });
     return response.data;
   },

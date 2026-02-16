@@ -93,7 +93,7 @@ const workflowSteps = [
   },
   {
     id: 4,
-    title: "Fill BLI-03 Online Form",
+    title: "Fill BLI-03 ",
     description: "Submit Company Details & Progress Report",
     icon: FileText,
     status: "locked",
@@ -103,16 +103,6 @@ const workflowSteps = [
   },
   {
     id: 5,
-    title: "Upload BLI-03 Hardcopy",
-    description: "Print, sign, scan and upload BLI-03",
-    icon: Upload,
-    status: "locked",
-    link: "/student/bli03",
-    duration: "1-2 days",
-    output: "Signed hardcopy uploaded",
-  },
-  {
-    id: 6,
     title: "BLI-03 Approval",
     description: "Coordinator reviews BLI-03",
     icon: Clock,
@@ -172,8 +162,6 @@ export default function StudentApplicationsPage() {
   const [hasBli03, setHasBli03] = useState(false);
   const [hasBli04, setHasBli04] = useState(false);
   const [bli03DocumentStatus, setBli03DocumentStatus] = useState<any>(null);
-  const [bli03OnlineStatus, setBli03OnlineStatus] = useState<any>(null);
-  const [bli03HardcopyStatus, setBli03HardcopyStatus] = useState<any>(null);
   const [bli04DocumentStatus, setBli04DocumentStatus] = useState<any>(null);
   
   // Calculate dynamic workflow steps based on actual data
@@ -214,54 +202,29 @@ export default function StudentApplicationsPage() {
       steps[3].status = "in_progress";
     }
     
-    // Step 5: Upload BLI-03 Hardcopy
+    // Step 5: BLI-03 Approval
     if (!hasBli03) {
       steps[4].status = "locked";
-    } else if (bli03HardcopyStatus) {
+    } else if (bli03DocumentStatus?.status === 'SIGNED') {
       steps[4].status = "completed";
     } else {
       steps[4].status = "in_progress";
     }
     
-    // Step 6: BLI-03 Approval (both online and hardcopy must be SIGNED)
-    const bothBli03Approved = 
-      bli03OnlineStatus?.status === 'SIGNED' && 
-      bli03HardcopyStatus?.status === 'SIGNED';
-    
-    if (!bli03HardcopyStatus) {
+    // Step 6: Download SLI-03 + DLI-01
+    if (bli03DocumentStatus?.status !== 'SIGNED') {
       steps[5].status = "locked";
-    } else if (bothBli03Approved) {
-      steps[5].status = "completed";
     } else {
       steps[5].status = "in_progress";
     }
     
-    // Step 7: Download SLI-03 + DLI-01 (unlocked when step 6 is completed)
-    if (!bothBli03Approved) {
+    // Step 7: BLI-04 Submission
+    if (bli03DocumentStatus?.status !== 'SIGNED') {
       steps[6].status = "locked";
     } else if (hasBli04) {
       steps[6].status = "completed";
     } else {
       steps[6].status = "in_progress";
-    }
-    
-    // Step 8: BLI-04 Submission (unlocked when step 6 is completed, completed when BLI-04 is submitted)
-    if (!bothBli03Approved) {
-      steps[7].status = "locked";
-    } else if (hasBli04) {
-      steps[7].status = "completed";
-    } else {
-      steps[7].status = "in_progress";
-    }
-    
-    // Steps 9+: Lock until step 8 is completed
-    for (let i = 8; i < steps.length; i++) {
-      if (hasBli04) {
-        steps[i].status = "in_progress"; // Unlock next steps after BLI-04
-        break; // Only unlock the next step
-      } else {
-        steps[i].status = "locked";
-      }
     }
     
     return steps;
@@ -310,40 +273,13 @@ export default function StudentApplicationsPage() {
             if (hasBli03Form) {
               setHasBli03(true);
               
-              // Check for BLI-03 online form document
-              const bli03OnlineDocument = existingApp.documents?.find(
+              // Check for BLI-03 document
+              const bli03Document = existingApp.documents?.find(
                 (doc: any) => doc.type === 'BLI_03'
               );
               
-              // Check for BLI-03 hardcopy document
-              const bli03HardcopyDocument = existingApp.documents?.find(
-                (doc: any) => doc.type === 'BLI_03_HARDCOPY'
-              );
-              
-              // Store individual statuses
-              setBli03OnlineStatus(bli03OnlineDocument || null);
-              setBli03HardcopyStatus(bli03HardcopyDocument || null);
-              
-              // BLI-03 is fully approved only when BOTH online and hardcopy are SIGNED
-              if (bli03OnlineDocument && bli03HardcopyDocument) {
-                const bothApproved = 
-                  bli03OnlineDocument.status === 'SIGNED' && 
-                  bli03HardcopyDocument.status === 'SIGNED';
-                
-                // Show the most recent document status (prioritize hardcopy if both exist)
-                setBli03DocumentStatus(bli03HardcopyDocument);
-                
-                // If both are approved, mark as fully approved
-                if (bothApproved) {
-                  setBli03DocumentStatus({
-                    ...bli03HardcopyDocument,
-                    status: 'SIGNED',
-                    fullyApproved: true
-                  });
-                }
-              } else if (bli03OnlineDocument) {
-                // Only online form submitted
-                setBli03DocumentStatus(bli03OnlineDocument);
+              if (bli03Document) {
+                setBli03DocumentStatus(bli03Document);
               }
             }
             
@@ -841,53 +777,31 @@ export default function StudentApplicationsPage() {
                         </div>
 
                         {/* BLI-03 Approval Status Details (Step 6) */}
-                        {step.id === 6 && hasBli03 && (
+                        {step.id === 5 && hasBli03 && bli03DocumentStatus && (
                           <div className="mt-3 space-y-2">
                             <p className="text-sm font-semibold text-gray-700 mb-2">Review Status:</p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {/* Online Form Status */}
-                              <div className="flex items-center gap-2 p-3 bg-white rounded-lg border">
-                                <FileText className="h-4 w-4 text-blue-600" />
-                                <div className="flex-1">
-                                  <p className="text-xs font-medium text-gray-600">Online Form</p>
-                                  <p className={`text-sm font-semibold ${
-                                    bli03OnlineStatus?.status === 'SIGNED' ? 'text-green-600' :
-                                    bli03OnlineStatus?.status === 'PENDING_SIGNATURE' ? 'text-blue-600' :
-                                    bli03OnlineStatus?.status === 'DRAFT' ? 'text-orange-600' :
-                                    'text-gray-600'
-                                  }`}>
-                                    {bli03OnlineStatus?.status === 'SIGNED' ? '✓ Approved' :
-                                     bli03OnlineStatus?.status === 'PENDING_SIGNATURE' ? '⏳ Under Review' :
-                                     bli03OnlineStatus?.status === 'DRAFT' ? '⚠ Changes Requested' :
-                                     '○ Not Submitted'}
-                                  </p>
-                                </div>
-                              </div>
-                              
-                              {/* Hardcopy Status */}
-                              <div className="flex items-center gap-2 p-3 bg-white rounded-lg border">
-                                <Upload className="h-4 w-4 text-purple-600" />
-                                <div className="flex-1">
-                                  <p className="text-xs font-medium text-gray-600">Hardcopy Scan</p>
-                                  <p className={`text-sm font-semibold ${
-                                    bli03HardcopyStatus?.status === 'SIGNED' ? 'text-green-600' :
-                                    bli03HardcopyStatus?.status === 'PENDING_SIGNATURE' ? 'text-blue-600' :
-                                    bli03HardcopyStatus?.status === 'DRAFT' ? 'text-orange-600' :
-                                    'text-gray-600'
-                                  }`}>
-                                    {bli03HardcopyStatus?.status === 'SIGNED' ? '✓ Approved' :
-                                     bli03HardcopyStatus?.status === 'PENDING_SIGNATURE' ? '⏳ Under Review' :
-                                     bli03HardcopyStatus?.status === 'DRAFT' ? '⚠ Changes Requested' :
-                                     '○ Not Uploaded'}
-                                  </p>
-                                </div>
+                            <div className="flex items-center gap-2 p-3 bg-white rounded-lg border">
+                              <FileText className="h-4 w-4 text-blue-600" />
+                              <div className="flex-1">
+                                <p className="text-xs font-medium text-gray-600">BLI-03 Form</p>
+                                <p className={`text-sm font-semibold ${
+                                  bli03DocumentStatus?.status === 'SIGNED' ? 'text-green-600' :
+                                  bli03DocumentStatus?.status === 'PENDING_SIGNATURE' ? 'text-blue-600' :
+                                  bli03DocumentStatus?.status === 'DRAFT' ? 'text-orange-600' :
+                                  'text-gray-600'
+                                }`}>
+                                  {bli03DocumentStatus?.status === 'SIGNED' ? '✓ Approved' :
+                                   bli03DocumentStatus?.status === 'PENDING_SIGNATURE' ? '⏳ Under Review' :
+                                   bli03DocumentStatus?.status === 'DRAFT' ? '⚠ Changes Requested' :
+                                   '○ Not Submitted'}
+                                </p>
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {/* BLI-04 Review Status Details (Step 8) */}
-                        {step.id === 8 && hasBli04 && bli04DocumentStatus && (
+                        {/* BLI-04 Review Status Details (Step 7) */}
+                        {step.id === 7 && hasBli04 && bli04DocumentStatus && (
                           <div className="mt-3 space-y-2">
                             <p className="text-sm font-semibold text-gray-700 mb-2">Review Status:</p>
                             <div className="flex items-center gap-2 p-3 bg-white rounded-lg border">

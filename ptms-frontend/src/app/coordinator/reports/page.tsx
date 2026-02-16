@@ -462,12 +462,10 @@ export default function CoordinatorReportsPage() {
 
         {/* Tabs for Different Report Sections */}
         <Tabs defaultValue="applications" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="applications">Applications</TabsTrigger>
             <TabsTrigger value="students">Students</TabsTrigger>
             <TabsTrigger value="companies">Companies</TabsTrigger>
-            <TabsTrigger value="documents">Documents</TabsTrigger>
-            <TabsTrigger value="performance">Performance</TabsTrigger>
           </TabsList>
 
           {/* Applications Tab */}
@@ -606,70 +604,108 @@ export default function CoordinatorReportsPage() {
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="w-full border-collapse">
                     <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-3 px-4 font-medium">Student</th>
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left py-3 px-4 font-medium sticky left-0 bg-gray-50 z-10">Student</th>
                         <th className="text-left py-3 px-4 font-medium">Matric No</th>
                         <th className="text-left py-3 px-4 font-medium">Program</th>
-                        <th className="text-center py-3 px-4 font-medium">Status</th>
-                        <th className="text-center py-3 px-4 font-medium">Progress</th>
-                        <th className="text-center py-3 px-4 font-medium">Documents</th>
+                        <th className="text-center py-3 px-4 font-medium bg-green-50">BLI-01</th>
+                        <th className="text-center py-3 px-4 font-medium bg-green-50">BLI-02</th>
+                        <th className="text-center py-3 px-4 font-medium bg-green-50">BLI-03</th>
+                        <th className="text-center py-3 px-4 font-medium bg-green-50">BLI-04</th>
+                        <th className="text-center py-3 px-4 font-medium bg-blue-50">Progress</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {studentProgressData?.students?.map((student: any) => (
-                        <tr key={student.id} className="border-b hover:bg-gray-50">
-                          <td 
-                            className="py-3 px-4 font-medium text-indigo-600 hover:text-indigo-800 cursor-pointer"
-                            onClick={() => {
-                              setSelectedStudent(student);
-                              setStudentDialogOpen(true);
-                            }}
+                      {studentProgressData?.students?.map((student: any, index: number) => {
+                        // Helper function to get status and color for each BLI
+                        const getBLIStatus = (formType?: string, docType?: string) => {
+                          let item = null;
+                          let isFormResponse = false;
+                          
+                          if (formType) {
+                            item = student?.formResponses?.find((form: any) => form.formTypeEnum === formType);
+                            isFormResponse = true;
+                          } else if (docType) {
+                            item = student?.documents?.find((doc: any) => doc.type === docType);
+                            isFormResponse = false;
+                          }
+                          
+                          if (!item) {
+                            return { status: 'NOT SUBMITTED', bgColor: 'bg-red-100', textColor: 'text-red-700' };
+                          }
+                          
+                          // For form responses, existence means it's done (no status field)
+                          if (isFormResponse) {
+                            return { status: 'DONE', bgColor: 'bg-green-100', textColor: 'text-green-700' };
+                          }
+                          
+                          // For documents, check the status field (DocumentStatus enum)
+                          const status = item.status;
+                          
+                          if (status === 'SIGNED') {
+                            return { status: 'DONE', bgColor: 'bg-green-100', textColor: 'text-green-700' };
+                          } else if (status === 'PENDING_SIGNATURE' || status === 'PENDING' || status === 'SUBMITTED' || status === 'UNDER_REVIEW') {
+                            return { status: 'PENDING', bgColor: 'bg-yellow-100', textColor: 'text-yellow-700' };
+                          } else {
+                            // Document exists but in other status (DRAFT, REJECTED, etc.)
+                            return { status: 'NOT SUBMITTED', bgColor: 'bg-red-100', textColor: 'text-red-700' };
+                          }
+                        };
+                        
+                        const bli01Status = getBLIStatus('BLI_01');
+                        const bli02Status = getBLIStatus(undefined, 'BLI_02');
+                        const bli03Status = getBLIStatus('BLI_03');
+                        const bli04Status = getBLIStatus(undefined, 'BLI_04');
+                        
+                        return (
+                          <tr 
+                            key={student.id} 
+                            className={`border-b hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}`}
                           >
-                            {student.name}
-                          </td>
-                          <td className="py-3 px-4">{student.matricNo}</td>
-                          <td className="py-3 px-4">{student.program || 'N/A'}</td>
-                          <td className="text-center py-3 px-4">
-                            <Badge 
-                              variant={
-                                student.status === 'Completed' ? 'default' :
-                                student.status === 'Approved & Ongoing' ? 'success' :
-                                student.status === 'Application Submitted' ? 'warning' :
-                                'secondary'
-                              }
-                              className="text-xs"
+                            <td 
+                              className="py-3 px-4 font-medium text-indigo-600 hover:text-indigo-800 cursor-pointer sticky left-0 bg-inherit z-10"
+                              onClick={() => {
+                                setSelectedStudent(student);
+                                setStudentDialogOpen(true);
+                              }}
                             >
-                              {student.status}
-                            </Badge>
-                          </td>
-                          <td className="text-center py-3 px-4">
-                            <div className="flex items-center gap-2 justify-center">
-                              <div className="w-24 bg-gray-200 rounded-full h-2">
-                                <div
-                                  className={`h-2 rounded-full ${
-                                    student.progress === 100 ? 'bg-purple-600' :
-                                    student.progress >= 50 ? 'bg-green-600' :
-                                    student.progress > 0 ? 'bg-yellow-600' :
-                                    'bg-gray-400'
-                                  }`}
-                                  style={{ width: `${student.progress}%` }}
-                                />
-                              </div>
-                              <span className="text-sm font-medium">{student.progress}%</span>
-                            </div>
-                          </td>
-                          <td className="text-center py-3 px-4">
-                            <span className="text-sm text-gray-600">
-                              {student.completedSteps}/{student.totalSteps}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                              {student.name}
+                            </td>
+                            <td className="py-3 px-4 text-sm">{student.matricNo}</td>
+                            <td className="py-3 px-4 text-sm">{student.program || 'N/A'}</td>
+                            <td className={`text-center py-3 px-4 ${bli01Status.bgColor}`}>
+                              <span className={`text-xs font-semibold ${bli01Status.textColor}`}>
+                                {bli01Status.status}
+                              </span>
+                            </td>
+                            <td className={`text-center py-3 px-4 ${bli02Status.bgColor}`}>
+                              <span className={`text-xs font-semibold ${bli02Status.textColor}`}>
+                                {bli02Status.status}
+                              </span>
+                            </td>
+                            <td className={`text-center py-3 px-4 ${bli03Status.bgColor}`}>
+                              <span className={`text-xs font-semibold ${bli03Status.textColor}`}>
+                                {bli03Status.status}
+                              </span>
+                            </td>
+                            <td className={`text-center py-3 px-4 ${bli04Status.bgColor}`}>
+                              <span className={`text-xs font-semibold ${bli04Status.textColor}`}>
+                                {bli04Status.status}
+                              </span>
+                            </td>
+                            <td className="text-center py-3 px-4 bg-blue-50">
+                              <span className="text-sm font-bold text-blue-700">
+                                {student.progress}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {(!studentProgressData?.students || studentProgressData.students.length === 0) && (
                         <tr>
-                          <td colSpan={6} className="text-center py-8 text-gray-500">
+                          <td colSpan={8} className="text-center py-8 text-gray-500">
                             No students enrolled in this session
                           </td>
                         </tr>
@@ -677,6 +713,121 @@ export default function CoordinatorReportsPage() {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Summary Section */}
+                {studentProgressData?.students && studentProgressData.students.length > 0 && (
+                  <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {/* BLI-01 Summary */}
+                    <div className="border rounded-lg p-4">
+                      <h4 className="font-semibold text-sm mb-3 text-gray-700">BLI-01 Summary</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-red-700">Not Submitted:</span>
+                          <span className="font-bold text-red-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              !s.formResponses?.some((f: any) => f.formTypeEnum === 'BLI_01')
+                            ).length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-green-700">Done:</span>
+                          <span className="font-bold text-green-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              s.formResponses?.some((f: any) => f.formTypeEnum === 'BLI_01')
+                            ).length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BLI-02 Summary */}
+                    <div className="border rounded-lg p-4">
+                      <h4 className="font-semibold text-sm mb-3 text-gray-700">BLI-02 Summary</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-red-700">Not Submitted:</span>
+                          <span className="font-bold text-red-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              !s.documents?.some((d: any) => d.type === 'BLI_02')
+                            ).length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-yellow-700">Pending:</span>
+                          <span className="font-bold text-yellow-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              s.documents?.some((d: any) => d.type === 'BLI_02' && 
+                                (d.status === 'PENDING_SIGNATURE' || d.status === 'PENDING' || d.status === 'SUBMITTED' || d.status === 'UNDER_REVIEW'))
+                            ).length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-green-700">Done:</span>
+                          <span className="font-bold text-green-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              s.documents?.some((d: any) => d.type === 'BLI_02' && d.status === 'SIGNED')
+                            ).length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BLI-03 Summary */}
+                    <div className="border rounded-lg p-4">
+                      <h4 className="font-semibold text-sm mb-3 text-gray-700">BLI-03 Summary</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-red-700">Not Submitted:</span>
+                          <span className="font-bold text-red-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              !s.formResponses?.some((f: any) => f.formTypeEnum === 'BLI_03')
+                            ).length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-green-700">Done:</span>
+                          <span className="font-bold text-green-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              s.formResponses?.some((f: any) => f.formTypeEnum === 'BLI_03')
+                            ).length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BLI-04 Summary */}
+                    <div className="border rounded-lg p-4">
+                      <h4 className="font-semibold text-sm mb-3 text-gray-700">BLI-04 Summary</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-red-700">Not Submitted:</span>
+                          <span className="font-bold text-red-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              !s.documents?.some((d: any) => d.type === 'BLI_04')
+                            ).length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-yellow-700">Pending:</span>
+                          <span className="font-bold text-yellow-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              s.documents?.some((d: any) => d.type === 'BLI_04' && 
+                                (d.status === 'PENDING_SIGNATURE' || d.status === 'PENDING' || d.status === 'SUBMITTED' || d.status === 'UNDER_REVIEW'))
+                            ).length}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-green-700">Done:</span>
+                          <span className="font-bold text-green-700">
+                            {studentProgressData.students.filter((s: any) => 
+                              s.documents?.some((d: any) => d.type === 'BLI_04' && d.status === 'SIGNED')
+                            ).length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -741,131 +892,6 @@ export default function CoordinatorReportsPage() {
                       <Tooltip />
                     </PieChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* Documents Tab */}
-          <TabsContent value="documents" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Document Review Statistics</CardTitle>
-                <CardDescription>Performance metrics by document type</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left py-3 px-4 font-medium">Document Type</th>
-                        <th className="text-center py-3 px-4 font-medium">Total</th>
-                        <th className="text-center py-3 px-4 font-medium">Approved</th>
-                        <th className="text-center py-3 px-4 font-medium">Pending Approval</th>
-                        <th className="text-center py-3 px-4 font-medium">Change Requests</th>
-                        <th className="text-center py-3 px-4 font-medium">Rejected</th>
-                        <th className="text-center py-3 px-4 font-medium">Avg Review Time</th>
-                        <th className="text-center py-3 px-4 font-medium">Approval Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {documentTypeData.map((doc) => (
-                        <tr key={doc.type} className="border-b hover:bg-gray-50">
-                          <td className="py-3 px-4 font-medium">{doc.type}</td>
-                          <td className="text-center py-3 px-4">{doc.total}</td>
-                          <td className="text-center py-3 px-4">
-                            <Badge variant="success">{doc.approved}</Badge>
-                          </td>
-                          <td className="text-center py-3 px-4">
-                            <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-                              {doc.pendingApproval || 0}
-                            </Badge>
-                          </td>
-                          <td className="text-center py-3 px-4">
-                            <Badge variant="warning">{doc.changeRequests || 0}</Badge>
-                          </td>
-                          <td className="text-center py-3 px-4">
-                            <Badge variant="destructive">{doc.rejected}</Badge>
-                          </td>
-                          <td className="text-center py-3 px-4">{doc.avgReviewTime} days</td>
-                          <td className="text-center py-3 px-4">
-                            <span className="font-medium text-green-600">
-                              {doc.total > 0 ? Math.round((doc.approved / doc.total) * 100) : 0}%
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Performance Tab */}
-          <TabsContent value="performance" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Review Performance Over Time</CardTitle>
-                <CardDescription>Weekly review metrics and average processing time</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={reviewPerformanceData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="week" />
-                    <YAxis yAxisId="left" />
-                    <YAxis yAxisId="right" orientation="right" />
-                    <Tooltip />
-                    <Legend />
-                    <Area
-                      yAxisId="left"
-                      type="monotone"
-                      dataKey="reviewed"
-                      stroke="#3B82F6"
-                      fill="#3B82F6"
-                      fillOpacity={0.6}
-                      name="Documents Reviewed"
-                    />
-                    <Line
-                      yAxisId="right"
-                      type="monotone"
-                      dataKey="avgTime"
-                      stroke="#F59E0B"
-                      strokeWidth={2}
-                      name="Avg Time (days)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Total Reviews</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">55</div>
-                  <p className="text-xs text-muted-foreground mt-1">Last 4 weeks</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Average Processing Time</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">3.1 days</div>
-                  <p className="text-xs text-green-600 mt-1">↓ 0.4 days from last month</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">First-Time Approval Rate</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold">82%</div>
-                  <p className="text-xs text-green-600 mt-1">↑ 5% from last month</p>
                 </CardContent>
               </Card>
             </div>
@@ -1039,15 +1065,13 @@ export default function CoordinatorReportsPage() {
                   // Check actual submission status from backend data
                   const hasBLI01 = selectedStudent?.formResponses?.some((form: any) => form.formTypeEnum === 'BLI_01') || false;
                   const hasBLI02 = selectedStudent?.documents?.some((doc: any) => doc.type === 'BLI_02') || false;
-                  const hasBLI03Online = selectedStudent?.formResponses?.some((form: any) => form.formTypeEnum === 'BLI_03') || false;
-                  const hasBLI03Hardcopy = selectedStudent?.documents?.some((doc: any) => doc.type === 'BLI_03_HARDCOPY') || false;
+                  const hasBLI03 = selectedStudent?.formResponses?.some((form: any) => form.formTypeEnum === 'BLI_03') || false;
                   const hasBLI04 = selectedStudent?.documents?.some((doc: any) => doc.type === 'BLI_04') || false;
 
                   const documents = [
                     { key: 'BLI-01', label: 'BLI-01', isCompleted: hasBLI01 },
                     { key: 'BLI-02', label: 'BLI-02', isCompleted: hasBLI02 },
-                    { key: 'BLI-03-ONLINE', label: 'BLI-03 (Online)', isCompleted: hasBLI03Online },
-                    { key: 'BLI-03-HARDCOPY', label: 'BLI-03 (Hardcopy)', isCompleted: hasBLI03Hardcopy },
+                    { key: 'BLI-03', label: 'BLI-03', isCompleted: hasBLI03 },
                     { key: 'BLI-04', label: 'BLI-04', isCompleted: hasBLI04 }
                   ];
 

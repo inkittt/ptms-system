@@ -10,10 +10,27 @@ export class SessionsService {
   constructor(private prisma: PrismaService) {}
 
   async create(createSessionDto: CreateSessionDto, coordinatorId?: string) {
-    const { name, year, semester, deadlinesJSON, minCredits, minWeeks, maxWeeks, isActive } = createSessionDto;
+    const { 
+      name, 
+      year, 
+      semester,
+      trainingStartDate,
+      trainingEndDate,
+      deadlinesJSON, 
+      minCredits, 
+      minWeeks, 
+      maxWeeks, 
+      isActive,
+      coordinatorSignature,
+      coordinatorSignatureType,
+    } = createSessionDto;
 
     if (minWeeks > maxWeeks) {
       throw new BadRequestException('Minimum weeks cannot be greater than maximum weeks');
+    }
+
+    if (trainingStartDate && trainingEndDate && new Date(trainingStartDate) > new Date(trainingEndDate)) {
+      throw new BadRequestException('Training start date cannot be after training end date');
     }
 
     return this.prisma.session.create({
@@ -21,12 +38,17 @@ export class SessionsService {
         name,
         year,
         semester,
+        trainingStartDate: trainingStartDate ? new Date(trainingStartDate) : null,
+        trainingEndDate: trainingEndDate ? new Date(trainingEndDate) : null,
         deadlinesJSON: deadlinesJSON || {},
         minCredits: minCredits || 113,
         minWeeks,
         maxWeeks,
         isActive: isActive ?? true,
         coordinatorId,
+        coordinatorSignature,
+        coordinatorSignatureType,
+        coordinatorSignedAt: coordinatorSignature ? new Date() : null,
       },
       include: {
         coordinator: {
@@ -141,9 +163,24 @@ export class SessionsService {
       throw new BadRequestException('Minimum weeks cannot be greater than maximum weeks');
     }
 
+    if (updateSessionDto.trainingStartDate && updateSessionDto.trainingEndDate && 
+        new Date(updateSessionDto.trainingStartDate) > new Date(updateSessionDto.trainingEndDate)) {
+      throw new BadRequestException('Training start date cannot be after training end date');
+    }
+
+    const updateData: any = { ...updateSessionDto };
+    
+    if (updateSessionDto.trainingStartDate) {
+      updateData.trainingStartDate = new Date(updateSessionDto.trainingStartDate);
+    }
+    
+    if (updateSessionDto.trainingEndDate) {
+      updateData.trainingEndDate = new Date(updateSessionDto.trainingEndDate);
+    }
+
     return this.prisma.session.update({
       where: { id },
-      data: updateSessionDto,
+      data: updateData,
     });
   }
 
@@ -402,5 +439,44 @@ export class SessionsService {
         },
       },
     });
+  }
+
+  async uploadCoordinatorSignature(
+    sessionId: string,
+    coordinatorId: string,
+    file: Express.Multer.File,
+  ) {
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    if (session.coordinatorId !== coordinatorId) {
+      throw new BadRequestException('You can only upload signatures for sessions you coordinate');
+    }
+
+    const fs = require('fs');
+    const imageBuffer = fs.readFileSync(file.path);
+    const base64Signature = imageBuffer.toString('base64');
+
+    const updatedSession = await this.prisma.session.update({
+      where: { id: sessionId },
+      data: {
+        coordinatorSignature: base64Signature,
+        coordinatorSignatureType: 'image',
+        coordinatorSignedAt: new Date(),
+      },
+    });
+
+    fs.unlinkSync(file.path);
+
+    return {
+      message: 'Coordinator signature uploaded successfully',
+      signatureUploaded: true,
+      signedAt: updatedSession.coordinatorSignedAt,
+    };
   }
 }

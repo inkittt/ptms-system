@@ -21,10 +21,13 @@ import { CreateApplicationDto } from './dto/create-application.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 import { UpdateBli03Dto } from './dto/update-bli03.dto';
+import { SubmitBli03Dto } from './dto/submit-bli03.dto';
+import { ApproveBli03Dto } from './dto/approve-bli03.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { UserRole } from '@prisma/client';
 
 @Controller('applications')
@@ -84,8 +87,8 @@ export class ApplicationsController {
     return { application };
   }
 
-  @Get(':id/bli01/pdf')
-  @Roles(UserRole.STUDENT)
+  @Get(':id/bli-01/pdf')
+  @Roles(UserRole.STUDENT, UserRole.COORDINATOR)
   async generateBLI01PDF(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -105,8 +108,8 @@ export class ApplicationsController {
     return new StreamableFile(pdfBuffer);
   }
 
-  @Get(':id/bli03/pdf')
-  @Roles(UserRole.STUDENT)
+  @Get(':id/bli-03/pdf')
+  @Roles(UserRole.STUDENT, UserRole.COORDINATOR)
   async generateBLI03PDF(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -126,8 +129,8 @@ export class ApplicationsController {
     return new StreamableFile(pdfBuffer);
   }
 
-  @Get(':id/sli03/pdf')
-  @Roles(UserRole.STUDENT)
+  @Get(':id/sli-03/pdf')
+  @Roles(UserRole.STUDENT, UserRole.COORDINATOR)
   async generateSLI03PDF(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -147,8 +150,8 @@ export class ApplicationsController {
     return new StreamableFile(pdfBuffer);
   }
 
-  @Get(':id/dli01/pdf')
-  @Roles(UserRole.STUDENT)
+  @Get(':id/dli-01/pdf')
+  @Roles(UserRole.STUDENT, UserRole.COORDINATOR)
   async generateDLI01PDF(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -168,7 +171,7 @@ export class ApplicationsController {
     return new StreamableFile(pdfBuffer);
   }
 
-  @Get(':id/bli04/pdf')
+  @Get(':id/bli-04/pdf')
   @Roles(UserRole.STUDENT, UserRole.COORDINATOR)
   async generateBLI04PDF(
     @CurrentUser() user: any,
@@ -266,6 +269,51 @@ export class ApplicationsController {
       coordinatorId,
     );
     return { document };
+  }
+
+  @Get('documents/:documentId/download')
+  @Roles(UserRole.COORDINATOR)
+  async downloadUploadedDocument(
+    @CurrentUser() user: any,
+    @Param('documentId') documentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const fileBuffer = await this.applicationsService.downloadUploadedDocument(
+      documentId,
+      user.userId,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="document-${documentId}.pdf"`,
+      'Content-Length': fileBuffer.length,
+    });
+
+    return new StreamableFile(fileBuffer);
+  }
+
+  @Get('students/:userId/documents/download-all')
+  @Roles(UserRole.COORDINATOR)
+  async downloadAllStudentDocuments(
+    @CurrentUser() user: any,
+    @Param('userId') userId: string,
+    @Res() res: Response,
+  ) {
+    const { stream, studentName, matricNo } =
+      await this.applicationsService.downloadAllStudentDocumentsAsZip(
+        userId,
+        user.userId,
+      );
+
+    const sanitizedName = studentName.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `${sanitizedName}_${matricNo}_Documents.zip`;
+
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    stream.pipe(res);
   }
 
   @Patch('documents/:documentId/review')
@@ -385,5 +433,233 @@ export class ApplicationsController {
       user.userId,
     );
     return { documents };
+  }
+
+  @Get(':id/documents/:documentId/download')
+  @Roles(UserRole.STUDENT)
+  async downloadStudentDocument(
+    @CurrentUser() user: any,
+    @Param('id') applicationId: string,
+    @Param('documentId') documentId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const fileBuffer = await this.applicationsService.downloadStudentDocument(
+      applicationId,
+      documentId,
+      user.userId,
+    );
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="document-${documentId}.pdf"`,
+      'Content-Length': fileBuffer.length,
+    });
+
+    return new StreamableFile(fileBuffer);
+  }
+
+  @Post(':id/bli04/save')
+  @Roles(UserRole.STUDENT)
+  async saveBli04Draft(
+    @CurrentUser() user: any,
+    @Param('id') applicationId: string,
+    @Body() bli04Data: any,
+  ) {
+    const formResponse = await this.applicationsService.saveBli04Draft(
+      applicationId,
+      user.userId,
+      bli04Data,
+    );
+    return {
+      message: 'BLI-04 draft saved successfully',
+      formResponse,
+    };
+  }
+
+  @Post(':id/bli04/generate-link')
+  @Roles(UserRole.STUDENT)
+  async generateSupervisorLink(
+    @CurrentUser() user: any,
+    @Param('id') applicationId: string,
+  ) {
+    const linkData = await this.applicationsService.generateSupervisorLink(
+      applicationId,
+      user.userId,
+    );
+    return {
+      message: 'Supervisor link generated successfully',
+      ...linkData,
+    };
+  }
+
+  @Get('bli04/submissions')
+  @Roles(UserRole.COORDINATOR)
+  async getBli04Submissions(
+    @CurrentUser() user: any,
+    @Query('sessionId') sessionId?: string,
+    @Query('program') program?: string,
+  ) {
+    const submissions = await this.applicationsService.getBli04Submissions(
+      user.userId,
+      { sessionId, program },
+    );
+    return { submissions };
+  }
+
+  @Post('bli04/submissions/:id/verify')
+  @Roles(UserRole.COORDINATOR)
+  async verifyBli04Submission(
+    @CurrentUser() user: any,
+    @Param('id') applicationId: string,
+    @Body() verifyDto: { decision: string; comments?: string },
+  ) {
+    const review = await this.applicationsService.verifyBli04Submission(
+      applicationId,
+      user.userId,
+      verifyDto.decision as any,
+      verifyDto.comments,
+    );
+    return {
+      message: 'BLI-04 submission verified successfully',
+      review,
+    };
+  }
+
+  @Post(':id/bli03/submit')
+  @Roles(UserRole.STUDENT)
+  async submitBli03WithSignature(
+    @CurrentUser() user: any,
+    @Param('id') applicationId: string,
+    @Body() submitBli03Dto: SubmitBli03Dto,
+  ) {
+    const result = await this.applicationsService.submitBli03WithSignature(
+      applicationId,
+      user.userId,
+      submitBli03Dto,
+    );
+    return result;
+  }
+
+  @Post('bli03/submissions/:id/approve')
+  @Roles(UserRole.COORDINATOR)
+  async approveBli03Submission(
+    @CurrentUser() user: any,
+    @Param('id') applicationId: string,
+    @Body() approveBli03Dto: ApproveBli03Dto,
+  ) {
+    const result = await this.applicationsService.approveBli03Submission(
+      applicationId,
+      user.userId,
+      approveBli03Dto,
+    );
+    return result;
+  }
+
+  @Get(':id/unlock-status')
+  @Roles(UserRole.STUDENT)
+  async getDocumentUnlockStatus(
+    @CurrentUser() user: any,
+    @Param('id') applicationId: string,
+  ) {
+    const unlockData = await this.applicationsService.getDocumentUnlockStatus(
+      applicationId,
+      user.userId,
+    );
+    return unlockData;
+  }
+
+  @Post(':id/upload-signature')
+  @Roles(UserRole.STUDENT)
+  @UseInterceptors(
+    FileInterceptor('signature', {
+      storage: diskStorage({
+        destination: './uploads/signatures',
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          cb(null, `signature-${uniqueSuffix}${ext}`);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.(png|jpg|jpeg)$/i)) {
+          return cb(new Error('Only PNG and JPG image files are allowed for signatures'), false);
+        }
+        cb(null, true);
+      },
+      limits: {
+        fileSize: 2 * 1024 * 1024, // 2MB
+      },
+    }),
+  )
+  async uploadStudentSignature(
+    @CurrentUser() user: any,
+    @Param('id') applicationId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const result = await this.applicationsService.uploadStudentSignature(
+      applicationId,
+      user.userId,
+      file,
+    );
+    return {
+      message: 'Signature uploaded successfully',
+      ...result,
+    };
+  }
+
+  @Post(':id/upload-supervisor-signature')
+  @Public()
+  @UseInterceptors(
+    FileInterceptor('signature', {
+      storage: diskStorage({
+        destination: './uploads/signatures',
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          cb(null, `supervisor-signature-${uniqueSuffix}${ext}`);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.(png|jpg|jpeg)$/i)) {
+          return cb(new Error('Only PNG and JPG image files are allowed for signatures'), false);
+        }
+        cb(null, true);
+      },
+      limits: {
+        fileSize: 2 * 1024 * 1024, // 2MB
+      },
+    }),
+  )
+  async uploadSupervisorSignature(
+    @Param('id') applicationId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Query('token') token?: string,
+  ) {
+    const result = await this.applicationsService.uploadSupervisorSignature(
+      applicationId,
+      file,
+      token,
+    );
+    return {
+      message: 'Supervisor signature uploaded successfully',
+      ...result,
+    };
+  }
+
+  @Post('test/bli03-pdf')
+  @Public()
+  async generateTestBLI03PDF(
+    @Body() testData: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const pdfBuffer = await this.applicationsService.generateTestBLI03PDF(testData);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="BLI-03-TEST.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    return new StreamableFile(pdfBuffer);
   }
 }

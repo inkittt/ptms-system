@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Eye, Download, Calendar, Building2, User, FileText } from "lucide-react";
+import { Search, Eye, Download, Calendar, Building2, User, FileText, CheckCircle, Clock, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 export default function BLI04SubmissionsPage() {
@@ -25,25 +25,39 @@ export default function BLI04SubmissionsPage() {
   useEffect(() => {
     async function loadSubmissions() {
       try {
-        // TODO: Implement API call to fetch BLI-04 submissions
-        // const response = await applicationsApi.getBli04Submissions();
-        // setSubmissions(response.submissions);
-        
-        // Mock data for now
-        const mockData = [
-          {
-            id: "1",
-            studentName: "Ahmad Bin Abdullah",
-            matricNo: "2021234567",
-            program: "CS251",
-            organisationName: "Tech Solutions Sdn Bhd",
-            reportingDate: "2025-01-15",
-            submittedAt: "2025-01-10",
-            status: "SUBMITTED",
+        const token = localStorage.getItem('accessToken');
+        const response = await fetch('http://localhost:3000/api/applications/bli04/submissions', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
           },
-        ];
-        setSubmissions(mockData);
-        setFilteredSubmissions(mockData);
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch BLI-04 submissions');
+        }
+
+        const data = await response.json();
+        const formattedSubmissions = data.submissions.map((app: any) => {
+          const bli04Form = app.formResponses[0];
+          const bli04Data = bli04Form?.payloadJSON || {};
+          
+          return {
+            id: app.id,
+            studentName: app.user.name,
+            matricNo: app.user.matricNo,
+            program: app.user.program,
+            organisationName: bli04Data.organisationName || 'N/A',
+            reportingDate: bli04Data.reportingDate || 'N/A',
+            submittedAt: bli04Form?.submittedAt || app.updatedAt,
+            supervisorSignedAt: bli04Form?.supervisorSignedAt,
+            supervisorName: bli04Form?.supervisorName,
+            isVerified: bli04Form?.verifiedBy ? true : false,
+            status: bli04Form?.verifiedBy ? 'VERIFIED' : 'PENDING_VERIFICATION',
+          };
+        });
+        
+        setSubmissions(formattedSubmissions);
+        setFilteredSubmissions(formattedSubmissions);
       } catch (error) {
         console.error("Error loading BLI-04 submissions:", error);
       } finally {
@@ -66,10 +80,12 @@ export default function BLI04SubmissionsPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case "VERIFIED":
+        return <Badge className="bg-green-100 text-green-800">Verified</Badge>;
+      case "PENDING_VERIFICATION":
+        return <Badge className="bg-yellow-100 text-yellow-800">Pending Verification</Badge>;
       case "SUBMITTED":
-        return <Badge className="bg-green-100 text-green-800">Submitted</Badge>;
-      case "PENDING":
-        return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
+        return <Badge className="bg-blue-100 text-blue-800">Submitted</Badge>;
       default:
         return <Badge className="bg-gray-100 text-gray-800">{status}</Badge>;
     }
@@ -104,12 +120,12 @@ export default function BLI04SubmissionsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Reported for Duty</CardTitle>
-            <User className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Supervisor Signed</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {submissions.filter((s) => s.status === "SUBMITTED").length}
+              {submissions.filter((s) => s.supervisorSignedAt).length}
             </div>
           </CardContent>
         </Card>
@@ -186,7 +202,7 @@ export default function BLI04SubmissionsPage() {
                   <TableHead>Program</TableHead>
                   <TableHead>Organisation</TableHead>
                   <TableHead>Reporting Date</TableHead>
-                  <TableHead>Submitted</TableHead>
+                  <TableHead>Supervisor</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -198,21 +214,37 @@ export default function BLI04SubmissionsPage() {
                     <TableCell>{submission.matricNo}</TableCell>
                     <TableCell>{submission.program}</TableCell>
                     <TableCell>{submission.organisationName}</TableCell>
-                    <TableCell>{formatDate(submission.reportingDate)}</TableCell>
-                    <TableCell>{formatDate(submission.submittedAt)}</TableCell>
+                    <TableCell>
+                      {submission.reportingDate !== 'N/A' ? formatDate(submission.reportingDate) : 'N/A'}
+                    </TableCell>
+                    <TableCell>
+                      {submission.supervisorSignedAt ? (
+                        <div className="flex items-center gap-1 text-green-600">
+                          <CheckCircle className="h-4 w-4" />
+                          <span className="text-sm">{submission.supervisorName}</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 text-yellow-600">
+                          <Clock className="h-4 w-4" />
+                          <span className="text-sm">Pending</span>
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell>{getStatusBadge(submission.status)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Link href={`/coordinator/bli04-submissions/${submission.id}`}>
                           <Button variant="outline" size="sm">
                             <Eye className="h-4 w-4 mr-2" />
-                            View
+                            View & Verify
                           </Button>
                         </Link>
-                        <Button variant="outline" size="sm">
-                          <Download className="h-4 w-4 mr-2" />
-                          PDF
-                        </Button>
+                        <a href={`http://localhost:3000/api/applications/${submission.id}/bli04/pdf`} target="_blank" rel="noopener noreferrer">
+                          <Button variant="outline" size="sm">
+                            <Download className="h-4 w-4 mr-2" />
+                            PDF
+                          </Button>
+                        </a>
                       </div>
                     </TableCell>
                   </TableRow>

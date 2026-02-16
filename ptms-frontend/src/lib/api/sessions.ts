@@ -11,6 +11,8 @@ export interface Session {
   name: string;
   year: number;
   semester: number;
+  trainingStartDate?: string;
+  trainingEndDate?: string;
   deadlinesJSON: {
     applicationDeadline?: string;
     bli03Deadline?: string;
@@ -25,6 +27,9 @@ export interface Session {
     name: string;
     email: string;
   };
+  coordinatorSignature?: string;
+  coordinatorSignatureType?: string;
+  coordinatorSignedAt?: string;
   createdAt: string;
   updatedAt: string;
   totalApplications?: number;
@@ -47,6 +52,8 @@ export interface CreateSessionDto {
   name: string;
   year: number;
   semester: number;
+  trainingStartDate?: string;
+  trainingEndDate?: string;
   deadlinesJSON?: {
     applicationDeadline?: string;
     bli03Deadline?: string;
@@ -56,6 +63,8 @@ export interface CreateSessionDto {
   minWeeks: number;
   maxWeeks: number;
   isActive?: boolean;
+  coordinatorSignature?: string;
+  coordinatorSignatureType?: string;
 }
 
 export interface ImportResult {

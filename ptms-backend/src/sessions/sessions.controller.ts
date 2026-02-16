@@ -13,6 +13,8 @@ import {
   Request,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { SessionsService } from './sessions.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -108,5 +110,44 @@ export class SessionsController {
     @Param('userId') userId: string,
   ) {
     return this.sessionsService.removeStudentFromSession(sessionId, userId);
+  }
+
+  @Post(':id/upload-coordinator-signature')
+  @Roles(UserRole.COORDINATOR, UserRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('signature', {
+      storage: diskStorage({
+        destination: './uploads/signatures',
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          cb(null, `coordinator-signature-${uniqueSuffix}${ext}`);
+        },
+      }),
+      fileFilter: (req, file, cb) => {
+        if (!file.originalname.match(/\.(png|jpg|jpeg)$/i)) {
+          return cb(new Error('Only PNG and JPG image files are allowed for signatures'), false);
+        }
+        cb(null, true);
+      },
+      limits: {
+        fileSize: 2 * 1024 * 1024, // 2MB
+      },
+    }),
+  )
+  async uploadCoordinatorSignature(
+    @Param('id') sessionId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Request() req,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Signature image file is required');
+    }
+
+    return this.sessionsService.uploadCoordinatorSignature(
+      sessionId,
+      req.user.userId,
+      file,
+    );
   }
 }

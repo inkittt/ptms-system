@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 
 @Injectable()
 export class StudentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private storageService: StorageService) {}
 
   async getPrograms() {
     const users = await this.prisma.user.findMany({
@@ -161,8 +162,20 @@ export class StudentsService {
         select: {
           id: true,
           status: true,
+          organizationName: true,
           createdAt: true,
           updatedAt: true,
+          documents: {
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              createdAt: true,
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          },
         },
       });
       application = latestApplication;
@@ -193,8 +206,15 @@ export class StudentsService {
         ? {
             id: application.id,
             status: application.status,
+            companyName: application.organizationName,
             createdAt: application.createdAt.toISOString(),
             updatedAt: application.updatedAt.toISOString(),
+            documents: application.documents.map(doc => ({
+              id: doc.id,
+              type: doc.type,
+              status: doc.status,
+              createdAt: doc.createdAt.toISOString(),
+            })),
           }
         : null,
     };
@@ -525,7 +545,7 @@ export class StudentsService {
     }
 
     // Transform applications data
-    const applications = student.applications.map((app) => ({
+    const applications = await Promise.all(student.applications.map(async (app) => ({
       id: app.id,
       status: app.status,
       organizationName: app.organizationName,
@@ -552,13 +572,36 @@ export class StudentsService {
         year: app.session.year,
         semester: app.session.semester,
       },
-      documents: app.documents.map((doc) => ({
-        id: doc.id,
-        type: doc.type,
-        status: doc.status,
-        fileUrl: doc.fileUrl,
-        createdAt: doc.createdAt,
-        updatedAt: doc.updatedAt,
+      documents: await Promise.all(app.documents.map(async (doc) => {
+        let accessibleUrl = doc.fileUrl;
+        
+        // Convert storage paths to signed URLs (expires in 1 hour)
+        if (doc.fileUrl && doc.fileUrl !== 'ONLINE_SUBMISSION') {
+          try {
+            // Check if file exists first
+            const fileExists = await this.storageService.exists(doc.fileUrl);
+            if (fileExists) {
+              accessibleUrl = await this.storageService.getUrl(doc.fileUrl, 3600);
+            } else {
+              console.warn(`File not found in storage: ${doc.fileUrl}`);
+              // Use a fallback to generate PDF URL instead
+              accessibleUrl = `/applications/${app.id}/${doc.type.toLowerCase().replace(/_/g, '')}/pdf`;
+            }
+          } catch (error) {
+            console.error(`Failed to generate URL for ${doc.fileUrl}:`, error);
+            // Use fallback URL to generate PDF
+            accessibleUrl = `/applications/${app.id}/${doc.type.toLowerCase().replace(/_/g, '')}/pdf`;
+          }
+        }
+        
+        return {
+          id: doc.id,
+          type: doc.type,
+          status: doc.status,
+          fileUrl: accessibleUrl,
+          createdAt: doc.createdAt,
+          updatedAt: doc.updatedAt,
+        };
       })),
       formResponses: app.formResponses.map((form) => ({
         id: form.id,
@@ -579,7 +622,7 @@ export class StudentsService {
       })),
       createdAt: app.createdAt,
       updatedAt: app.updatedAt,
-    }));
+    })));
 
     // Get latest session info
     const latestSession = student.studentSessions[0];

@@ -5,6 +5,7 @@
  */
 
 import PDFDocument from 'pdfkit';
+import sharp from 'sharp';
 
 interface BLI01Data {
   student: {
@@ -22,10 +23,32 @@ interface BLI01Data {
     name: string;
     year: number;
     semester: number;
+    startDate?: Date;
+    endDate?: Date;
+    applicationDeadline?: Date;
+    referenceNumber?: string;
+    minWeeks: number;
+    maxWeeks: number;
   };
   application: {
     id: string;
     createdAt: Date;
+  };
+  coordinator: {
+    name: string;
+    email: string;
+    phone?: string;
+    program?: string;
+    signature?: string;
+    signatureType?: string;
+  };
+  campus: {
+    faculty: string;
+    universityBranch: string;
+    campusName: string;
+    address: string;
+    city: string;
+    phone: string;
   };
 }
 
@@ -35,7 +58,7 @@ interface BLI01Data {
  * @returns Promise<Buffer> - PDF buffer
  */
 export async function generateBLI01(applicationData: BLI01Data): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     try {
       // Create PDF document
       const doc = new PDFDocument({
@@ -66,8 +89,7 @@ export async function generateBLI01(applicationData: BLI01Data): Promise<Buffer>
 
       // Generate document content
       addHeader(doc, applicationData);
-      addFormContent(doc, applicationData);
-      addFooter(doc, applicationData);
+      await addFormContent(doc, applicationData);
 
       // Finalize PDF
       doc.end();
@@ -83,39 +105,43 @@ export async function generateBLI01(applicationData: BLI01Data): Promise<Buffer>
 function addHeader(doc: PDFKit.PDFDocument, data: BLI01Data) {
   const leftMargin = 72;
   const pageWidth = doc.page.width;
+  const { campus } = data;
   
-  // Left side - Faculty name
+  // Left side - Faculty name (dynamic)
+  const facultyLines = campus.faculty.split('\n');
   doc.fontSize(10)
-     .font('Helvetica-Bold')
-     .text('Fakulti Sains Komputer dan', leftMargin, 50, { width: 180 });
+     .font('Helvetica-Bold');
   
-  doc.text('Matematik', leftMargin, 63, { width: 180 });
+  facultyLines.forEach((line, index) => {
+    doc.text(line, leftMargin, 50 + (index * 13), { width: 180 });
+  });
 
-  // Right side - University details
+  // Right side - University details (dynamic)
   const rightX = 220;
   doc.fontSize(9)
      .font('Helvetica')
-     .text('Universiti Teknologi MARA(Melaka)', rightX, 50);
+     .text(campus.universityBranch, rightX, 50);
   
-  doc.text('Kampus Jasin', rightX, 62);
-  doc.text('77300 Merlimau, Jasin', rightX, 74);
-  doc.text('Melaka Bandaraya Bersejarah', rightX, 86);
-  doc.text('Tel: (+606) 2645000', rightX, 98);
+  doc.text(campus.campusName, rightX, 62);
+  doc.text(campus.address, rightX, 74);
+  doc.text(campus.city, rightX, 86);
+  doc.text(`Tel: ${campus.phone}`, rightX, 98);
 }
 
 /**
  * Add main letter content (matching SLI-01 format exactly)
  */
-function addFormContent(doc: PDFKit.PDFDocument, data: BLI01Data) {
+async function addFormContent(doc: PDFKit.PDFDocument, data: BLI01Data) {
   const { student, session } = data;
   const leftMargin = 72;
   const rightMargin = 520;
   
   // Reference number and date (right aligned)
   const refY = 130;
+  const referenceNumber = session.referenceNumber || '100 – KJM(FSKM 14/3/4/3)';
   doc.fontSize(9)
      .font('Helvetica')
-     .text('Reference : 100 – KJM(FSKM 14/3/4/3)', leftMargin + 300, refY);
+     .text(`Reference : ${referenceNumber}`, leftMargin + 300, refY);
 
   doc.text(`Date           : ${formatDateEnglish(new Date())}`, leftMargin + 300, refY + 12);
 
@@ -186,29 +212,104 @@ function addFormContent(doc: PDFKit.PDFDocument, data: BLI01Data) {
   );
 
   // Closing
-  doc.text('Sincerely,', leftMargin, doc.y + 25);
+  doc.text('Sincerely,', leftMargin, doc.y + 20);
 
-  // Signature space
-  doc.moveDown(3);
+  // Signature space - add proper spacing before signature
+  doc.moveDown(1);
 
-  // Signature line
-  const sigY = doc.y;
-  doc.moveTo(leftMargin, sigY)
-     .lineTo(leftMargin + 150, sigY)
-     .stroke();
+  // Coordinator signature (if available)
+  const { coordinator } = data;
+  const signatureStartY = doc.y;
+  
+  if (coordinator.signature && coordinator.signatureType) {
+    try {
+      // Handle both data URI format and pure base64
+      let base64Data = coordinator.signature;
+      
+      // Strip data URI prefix if present (e.g., "data:image/png;base64,")
+      if (base64Data.includes('base64,')) {
+        base64Data = base64Data.split('base64,')[1];
+      }
+      
+      // Decode base64 signature
+      const signatureBuffer = Buffer.from(base64Data, 'base64');
+      
+      // Process image: crop whitespace and convert to PNG
+      const processedSignature = await sharp(signatureBuffer)
+        .trim({
+          background: { r: 255, g: 255, b: 255 },
+          threshold: 10
+        })
+        .png()
+        .toBuffer();
+      
+      // Different sizing for drawn vs uploaded signatures
+      let signatureWidth, signatureHeight, verticalSpacing;
+      
+      if (coordinator.signatureType === 'drawn') {
+        // Larger size for drawn signatures
+        signatureWidth = 200;
+        signatureHeight = 80;
+        verticalSpacing = 60;
+      } else if (coordinator.signatureType === 'image') {
+        // More compact size for uploaded image signatures
+        signatureWidth = 110;
+        signatureHeight = 45;
+        verticalSpacing = 55;
+      } else {
+        // Default for typed signatures (fallback)
+        signatureWidth = 180;
+        signatureHeight = 70;
+        verticalSpacing = 75;
+      }
+      
+      // Add signature image with proper size and positioning
+      doc.image(processedSignature, leftMargin , signatureStartY, {
+        width: signatureWidth,
+        fit: [signatureWidth, signatureHeight],
+      });
+      
+      // Move down after signature image to position line correctly
+      doc.y = signatureStartY + verticalSpacing;
+    } catch (error) {
+      console.error('Error adding signature image:', error);
+      // If signature fails, just continue with line
+    }
+  } else {
+    // If no signature, add some space
+    doc.moveDown(2);
+  }
 
-  // Coordinator details
+  // Signature line - positioned after the signature image, made bolder
+  const lineY = doc.y;
+  doc.lineWidth(1.5)
+     .moveTo(leftMargin, lineY)
+     .lineTo(leftMargin + 150, lineY)
+     .stroke()
+     .lineWidth(1);
+
+  // Coordinator details - positioned below the line
   doc.fontSize(9)
      .font('Helvetica-Bold')
-     .text('Albin Lemuel Kushan', leftMargin, sigY + 5);
+     .text(coordinator.name, leftMargin, lineY + 5);
+  
+  const coordinatorTitle = coordinator.program 
+    ? `Industrial Training Coordinator (${coordinator.program})`
+    : 'Industrial Training Coordinator';
   
   doc.font('Helvetica')
-     .text('Industrial Training Coordinator (CS251)', leftMargin, sigY + 17);
+     .text(coordinatorTitle, leftMargin, lineY + 17);
   
-  doc.text('UiTM Cawangan Melaka Kampus Jasin', leftMargin, sigY + 29);
-  doc.text('77300 Merlimau, Melaka', leftMargin, sigY + 41);
-  doc.text('Phone no: 013-8218885', leftMargin, sigY + 53);
-  doc.text('E-mail: albin1841@uitm.edu.my', leftMargin, sigY + 65);
+  // Use dynamic campus data from database
+  const { campus } = data;
+  doc.text(`${campus.universityBranch} ${campus.campusName}`, leftMargin, lineY + 29);
+  doc.text(campus.address, leftMargin, lineY + 41);
+  
+  if (coordinator.phone) {
+    doc.text(`Phone no: ${coordinator.phone}`, leftMargin, lineY + 53);
+  }
+  
+  doc.text(`E-mail: ${coordinator.email}`, leftMargin, lineY + (coordinator.phone ? 65 : 53));
 }
 
 /**
@@ -267,6 +368,15 @@ function formatDateTime(date: Date): string {
 }
 
 /**
+ * Get day ordinal suffix (1st, 2nd, 3rd, etc.)
+ */
+function getDayOrdinal(day: number): string {
+  const suffixes = ['th', 'st', 'nd', 'rd'];
+  const value = day % 100;
+  return day + (suffixes[(value - 20) % 10] || suffixes[value] || suffixes[0]);
+}
+
+/**
  * Get program full name from code
  */
 function getProgramFullName(programCode: string): string {
@@ -299,18 +409,53 @@ function getProgramFullName(programCode: string): string {
 function formatTrainingSession(session: any): string {
   const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
   
-  // Default to September - December based on the image
-  const startMonth = 'SEPTEMBER';
-  const endMonth = 'DECEMBER';
-  const year = session.year || new Date().getFullYear();
+  if (session.startDate && session.endDate) {
+    const start = new Date(session.startDate);
+    const end = new Date(session.endDate);
+    const startMonth = months[start.getMonth()];
+    const endMonth = months[end.getMonth()];
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
+    
+    if (startYear === endYear) {
+      return `${startMonth} ${startYear} – ${endMonth} ${endYear}`;
+    } else {
+      return `${startMonth} ${startYear} – ${endMonth} ${endYear}`;
+    }
+  }
   
-  return `${startMonth} ${year} – ${endMonth} ${year}`;
+  // Fallback to September - December if dates not provided
+  const year = session.year || new Date().getFullYear();
+  return `SEPTEMBER ${year} – DECEMBER ${year}`;
 }
 
 /**
  * Format training dates for paragraph 2
  */
 function formatTrainingDates(session: any): string {
+  if (session.startDate && session.endDate) {
+    const start = new Date(session.startDate);
+    const end = new Date(session.endDate);
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    
+    const startDay = start.getDate();
+    const endDay = end.getDate();
+    const startMonth = months[start.getMonth()];
+    const endMonth = months[end.getMonth()];
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
+    
+    const startDayOrdinal = getDayOrdinal(startDay);
+    const endDayOrdinal = getDayOrdinal(endDay);
+    
+    if (startYear === endYear) {
+      return `${startDayOrdinal} ${startMonth} ${startYear} until ${endDayOrdinal} ${endMonth} ${endYear}`;
+    } else {
+      return `${startDayOrdinal} ${startMonth} ${startYear} until ${endDayOrdinal} ${endMonth} ${endYear}`;
+    }
+  }
+  
+  // Fallback to default dates
   const year = session.year || new Date().getFullYear();
   return `15th September ${year} until 19th December ${year}`;
 }
@@ -319,6 +464,33 @@ function formatTrainingDates(session: any): string {
  * Format deadline for BLI-02 submission
  */
 function formatDeadline(session: any): string {
+  if (session.applicationDeadline) {
+    const deadline = new Date(session.applicationDeadline);
+    const day = deadline.getDate();
+    const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+    const month = months[deadline.getMonth()];
+    const year = deadline.getFullYear();
+    const dayOrdinal = getDayOrdinal(day);
+    
+    return `${dayOrdinal} ${month} ${year}`;
+  }
+  
+  // Fallback to 10 days before start date if available
+  if (session.startDate) {
+    const start = new Date(session.startDate);
+    const deadline = new Date(start);
+    deadline.setDate(deadline.getDate() - 10);
+    
+    const day = deadline.getDate();
+    const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+    const month = months[deadline.getMonth()];
+    const year = deadline.getFullYear();
+    const dayOrdinal = getDayOrdinal(day);
+    
+    return `${dayOrdinal} ${month} ${year}`;
+  }
+  
+  // Default fallback
   const year = session.year || new Date().getFullYear();
   return `10th SEPTEMBER ${year}`;
 }
@@ -332,7 +504,9 @@ export function validateBLI01Data(data: BLI01Data): boolean {
     data.student.matricNumber,
     data.student.program,
     data.student.faculty,
-    data.session.name
+    data.session.name,
+    data.coordinator.name,
+    data.coordinator.email
   ];
 
   const missing = required.filter(field => !field);

@@ -3,6 +3,7 @@ import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserRole } from '@prisma/client';
 
 @Controller('reports')
@@ -13,31 +14,34 @@ export class ReportsController {
   @Get('overview')
   @Roles(UserRole.COORDINATOR, UserRole.LECTURER)
   async getOverviewStats(
+    @CurrentUser() user: any,
     @Query('sessionId') sessionId?: string,
     @Query('program') program?: string,
   ) {
-    const stats = await this.reportsService.getOverviewStats(sessionId, program);
+    const stats = await this.reportsService.getOverviewStats(user.userId, sessionId, program);
     return { stats };
   }
 
   @Get('application-trends')
   @Roles(UserRole.COORDINATOR, UserRole.LECTURER)
   async getApplicationTrends(
+    @CurrentUser() user: any,
     @Query('sessionId') sessionId?: string,
     @Query('months') months?: string,
   ) {
     const monthsCount = months ? parseInt(months) : 6;
-    const trends = await this.reportsService.getApplicationTrends(sessionId, monthsCount);
+    const trends = await this.reportsService.getApplicationTrends(user.userId, sessionId, monthsCount);
     return { trends };
   }
 
   @Get('status-distribution')
   @Roles(UserRole.COORDINATOR, UserRole.LECTURER)
   async getStatusDistribution(
+    @CurrentUser() user: any,
     @Query('sessionId') sessionId?: string,
     @Query('program') program?: string,
   ) {
-    const distribution = await this.reportsService.getStatusDistribution(sessionId, program);
+    const distribution = await this.reportsService.getStatusDistribution(user.userId, sessionId, program);
     return { distribution };
   }
 

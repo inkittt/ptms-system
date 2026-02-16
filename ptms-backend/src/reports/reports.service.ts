@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApplicationStatus, DocumentStatus } from '@prisma/client';
 
@@ -6,9 +6,46 @@ import { ApplicationStatus, DocumentStatus } from '@prisma/client';
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
-  async getOverviewStats(sessionId?: string, program?: string) {
-    const whereClause: any = {};
-    if (sessionId) whereClause.sessionId = sessionId;
+  async getOverviewStats(coordinatorId: string, sessionId?: string, program?: string) {
+    // Get coordinator's sessions first
+    const coordinatedSessions = await this.prisma.session.findMany({
+      where: { coordinatorId },
+      select: { id: true },
+    });
+
+    const sessionIds = coordinatedSessions.map(s => s.id);
+    
+    if (sessionIds.length === 0) {
+      // Return empty stats if coordinator has no sessions
+      return {
+        totalStudents: 0,
+        eligibleStudents: 0,
+        totalApplications: 0,
+        approvedApplications: 0,
+        approved: 0,
+        pendingReview: 0,
+        changesRequested: 0,
+        rejectedApplications: 0,
+        overdue: 0,
+        sli03Issued: 0,
+        ongoingInternships: 0,
+        completedInternships: 0,
+        avgReviewTime: 0,
+        avgApprovalRate: 0,
+      };
+    }
+
+    // Filter by specific session if provided, otherwise use all coordinator's sessions
+    const targetSessionIds = sessionId ? [sessionId] : sessionIds;
+    
+    // Verify coordinator owns the requested session
+    if (sessionId && !sessionIds.includes(sessionId)) {
+      throw new ForbiddenException('You do not have access to this session');
+    }
+
+    const whereClause: any = {
+      sessionId: { in: targetSessionIds },
+    };
     if (program) whereClause.user = { program };
 
     // Count students enrolled in the session
@@ -58,10 +95,10 @@ export class ReportsService {
       },
     });
 
-    const pendingReview = await this.prisma.application.count({
+    const pendingReview = await this.prisma.document.count({
       where: {
-        ...whereClause,
-        status: ApplicationStatus.UNDER_REVIEW,
+        status: DocumentStatus.PENDING_SIGNATURE,
+        application: whereClause,
       },
     });
 
@@ -76,6 +113,22 @@ export class ReportsService {
       where: {
         ...whereClause,
         status: ApplicationStatus.REJECTED,
+      },
+    });
+
+    // Calculate overdue applications (pending for more than 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const overdue = await this.prisma.application.count({
+      where: {
+        ...whereClause,
+        status: {
+          in: [ApplicationStatus.SUBMITTED, ApplicationStatus.UNDER_REVIEW],
+        },
+        createdAt: {
+          lt: sevenDaysAgo,
+        },
       },
     });
 
@@ -139,10 +192,12 @@ export class ReportsService {
       totalStudents,
       eligibleStudents,
       totalApplications,
-      approvedApplications,
+      approvedApplications: approvedApplications,
+      approved: completedInternships,
       pendingReview,
       changesRequested,
       rejectedApplications,
+      overdue,
       sli03Issued,
       ongoingInternships,
       completedInternships,
@@ -151,16 +206,35 @@ export class ReportsService {
     };
   }
 
-  async getApplicationTrends(sessionId?: string, months: number = 6) {
+  async getApplicationTrends(coordinatorId: string, sessionId?: string, months: number = 6) {
+    // Get coordinator's sessions
+    const coordinatedSessions = await this.prisma.session.findMany({
+      where: { coordinatorId },
+      select: { id: true },
+    });
+
+    const sessionIds = coordinatedSessions.map(s => s.id);
+    
+    if (sessionIds.length === 0) {
+      return [];
+    }
+
+    // Verify coordinator owns the requested session
+    if (sessionId && !sessionIds.includes(sessionId)) {
+      throw new ForbiddenException('You do not have access to this session');
+    }
+
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - months);
+
+    const targetSessionIds = sessionId ? [sessionId] : sessionIds;
 
     const whereClause: any = {
       createdAt: {
         gte: startDate,
       },
+      sessionId: { in: targetSessionIds },
     };
-    if (sessionId) whereClause.sessionId = sessionId;
 
     const applications = await this.prisma.application.findMany({
       where: whereClause,
@@ -199,9 +273,29 @@ export class ReportsService {
     }));
   }
 
-  async getStatusDistribution(sessionId?: string, program?: string) {
-    const whereClause: any = {};
-    if (sessionId) whereClause.sessionId = sessionId;
+  async getStatusDistribution(coordinatorId: string, sessionId?: string, program?: string) {
+    // Get coordinator's sessions
+    const coordinatedSessions = await this.prisma.session.findMany({
+      where: { coordinatorId },
+      select: { id: true },
+    });
+
+    const sessionIds = coordinatedSessions.map(s => s.id);
+    
+    if (sessionIds.length === 0) {
+      return [];
+    }
+
+    // Verify coordinator owns the requested session
+    if (sessionId && !sessionIds.includes(sessionId)) {
+      throw new ForbiddenException('You do not have access to this session');
+    }
+
+    const targetSessionIds = sessionId ? [sessionId] : sessionIds;
+
+    const whereClause: any = {
+      sessionId: { in: targetSessionIds },
+    };
     if (program) whereClause.user = { program };
 
     const statusCounts = await this.prisma.application.groupBy({

@@ -17,26 +17,71 @@ let ReportsService = class ReportsService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    async getOverviewStats(sessionId, program) {
-        const whereClause = {};
-        if (sessionId)
-            whereClause.sessionId = sessionId;
+    async getOverviewStats(coordinatorId, sessionId, program) {
+        const coordinatedSessions = await this.prisma.session.findMany({
+            where: { coordinatorId },
+            select: { id: true },
+        });
+        const sessionIds = coordinatedSessions.map(s => s.id);
+        if (sessionIds.length === 0) {
+            return {
+                totalStudents: 0,
+                eligibleStudents: 0,
+                totalApplications: 0,
+                approvedApplications: 0,
+                approved: 0,
+                pendingReview: 0,
+                changesRequested: 0,
+                rejectedApplications: 0,
+                overdue: 0,
+                sli03Issued: 0,
+                ongoingInternships: 0,
+                completedInternships: 0,
+                avgReviewTime: 0,
+                avgApprovalRate: 0,
+            };
+        }
+        const targetSessionIds = sessionId ? [sessionId] : sessionIds;
+        if (sessionId && !sessionIds.includes(sessionId)) {
+            throw new common_1.ForbiddenException('You do not have access to this session');
+        }
+        const whereClause = {
+            sessionId: { in: targetSessionIds },
+        };
         if (program)
             whereClause.user = { program };
-        const totalStudents = await this.prisma.user.count({
-            where: Object.assign({ role: 'STUDENT' }, (program && { program })),
-        });
-        const eligibleStudents = await this.prisma.user.count({
-            where: Object.assign({ role: 'STUDENT' }, (program && { program })),
-        });
+        let totalStudents = 0;
+        let eligibleStudents = 0;
+        if (sessionId) {
+            const studentSessionWhere = { sessionId };
+            if (program)
+                studentSessionWhere.user = { program };
+            totalStudents = await this.prisma.studentSession.count({
+                where: studentSessionWhere,
+            });
+            eligibleStudents = await this.prisma.studentSession.count({
+                where: Object.assign(Object.assign({}, studentSessionWhere), { isEligible: true }),
+            });
+        }
+        else {
+            totalStudents = await this.prisma.user.count({
+                where: Object.assign({ role: 'STUDENT' }, (program && { program })),
+            });
+            eligibleStudents = await this.prisma.user.count({
+                where: Object.assign({ role: 'STUDENT' }, (program && { program })),
+            });
+        }
         const totalApplications = await this.prisma.application.count({
             where: whereClause,
         });
         const approvedApplications = await this.prisma.application.count({
             where: Object.assign(Object.assign({}, whereClause), { status: client_1.ApplicationStatus.APPROVED }),
         });
-        const pendingReview = await this.prisma.application.count({
-            where: Object.assign(Object.assign({}, whereClause), { status: client_1.ApplicationStatus.UNDER_REVIEW }),
+        const pendingReview = await this.prisma.document.count({
+            where: {
+                status: client_1.DocumentStatus.PENDING_SIGNATURE,
+                application: whereClause,
+            },
         });
         const changesRequested = await this.prisma.review.count({
             where: {
@@ -46,6 +91,15 @@ let ReportsService = class ReportsService {
         });
         const rejectedApplications = await this.prisma.application.count({
             where: Object.assign(Object.assign({}, whereClause), { status: client_1.ApplicationStatus.REJECTED }),
+        });
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const overdue = await this.prisma.application.count({
+            where: Object.assign(Object.assign({}, whereClause), { status: {
+                    in: [client_1.ApplicationStatus.SUBMITTED, client_1.ApplicationStatus.UNDER_REVIEW],
+                }, createdAt: {
+                    lt: sevenDaysAgo,
+                } }),
         });
         const sli03Issued = await this.prisma.document.count({
             where: {
@@ -57,7 +111,14 @@ let ReportsService = class ReportsService {
         const ongoingInternships = await this.prisma.application.count({
             where: Object.assign(Object.assign({}, whereClause), { status: client_1.ApplicationStatus.APPROVED }),
         });
-        const completedInternships = 0;
+        const completedInternships = await this.prisma.application.count({
+            where: Object.assign(Object.assign({}, whereClause), { status: client_1.ApplicationStatus.APPROVED, documents: {
+                    some: {
+                        type: 'BLI_04',
+                        status: client_1.DocumentStatus.SIGNED,
+                    },
+                } }),
+        });
         const applications = await this.prisma.application.findMany({
             where: Object.assign(Object.assign({}, whereClause), { status: client_1.ApplicationStatus.APPROVED }),
             select: {
@@ -80,10 +141,12 @@ let ReportsService = class ReportsService {
             totalStudents,
             eligibleStudents,
             totalApplications,
-            approvedApplications,
+            approvedApplications: approvedApplications,
+            approved: completedInternships,
             pendingReview,
             changesRequested,
             rejectedApplications,
+            overdue,
             sli03Issued,
             ongoingInternships,
             completedInternships,
@@ -91,16 +154,27 @@ let ReportsService = class ReportsService {
             avgApprovalRate,
         };
     }
-    async getApplicationTrends(sessionId, months = 6) {
+    async getApplicationTrends(coordinatorId, sessionId, months = 6) {
+        const coordinatedSessions = await this.prisma.session.findMany({
+            where: { coordinatorId },
+            select: { id: true },
+        });
+        const sessionIds = coordinatedSessions.map(s => s.id);
+        if (sessionIds.length === 0) {
+            return [];
+        }
+        if (sessionId && !sessionIds.includes(sessionId)) {
+            throw new common_1.ForbiddenException('You do not have access to this session');
+        }
         const startDate = new Date();
         startDate.setMonth(startDate.getMonth() - months);
+        const targetSessionIds = sessionId ? [sessionId] : sessionIds;
         const whereClause = {
             createdAt: {
                 gte: startDate,
             },
+            sessionId: { in: targetSessionIds },
         };
-        if (sessionId)
-            whereClause.sessionId = sessionId;
         const applications = await this.prisma.application.findMany({
             where: whereClause,
             select: {
@@ -130,10 +204,22 @@ let ReportsService = class ReportsService {
         });
         return Object.entries(monthlyData).map(([month, data]) => (Object.assign({ month }, data)));
     }
-    async getStatusDistribution(sessionId, program) {
-        const whereClause = {};
-        if (sessionId)
-            whereClause.sessionId = sessionId;
+    async getStatusDistribution(coordinatorId, sessionId, program) {
+        const coordinatedSessions = await this.prisma.session.findMany({
+            where: { coordinatorId },
+            select: { id: true },
+        });
+        const sessionIds = coordinatedSessions.map(s => s.id);
+        if (sessionIds.length === 0) {
+            return [];
+        }
+        if (sessionId && !sessionIds.includes(sessionId)) {
+            throw new common_1.ForbiddenException('You do not have access to this session');
+        }
+        const targetSessionIds = sessionId ? [sessionId] : sessionIds;
+        const whereClause = {
+            sessionId: { in: targetSessionIds },
+        };
         if (program)
             whereClause.user = { program };
         const statusCounts = await this.prisma.application.groupBy({
@@ -206,21 +292,34 @@ let ReportsService = class ReportsService {
                 } }),
             select: {
                 organizationName: true,
+                organizationAddress: true,
+                organizationPhone: true,
+                organizationEmail: true,
+                contactPersonName: true,
+                contactPersonPhone: true,
                 company: {
                     select: {
                         industry: true,
+                        address: true,
+                        contactName: true,
+                        contactEmail: true,
+                        contactPhone: true,
                     },
                 },
             },
         });
         const companyData = {};
         applications.forEach((app) => {
-            var _a;
+            var _a, _b, _c, _d, _e;
             const company = app.organizationName || 'Unknown';
             if (!companyData[company]) {
                 companyData[company] = {
                     students: 0,
                     industry: ((_a = app.company) === null || _a === void 0 ? void 0 : _a.industry) || 'Unknown',
+                    address: app.organizationAddress || ((_b = app.company) === null || _b === void 0 ? void 0 : _b.address),
+                    contactName: app.contactPersonName || ((_c = app.company) === null || _c === void 0 ? void 0 : _c.contactName),
+                    contactEmail: app.organizationEmail || ((_d = app.company) === null || _d === void 0 ? void 0 : _d.contactEmail),
+                    contactPhone: app.contactPersonPhone || app.organizationPhone || ((_e = app.company) === null || _e === void 0 ? void 0 : _e.contactPhone),
                 };
             }
             companyData[company].students++;
@@ -267,7 +366,7 @@ let ReportsService = class ReportsService {
         if (sessionId) {
             whereClause.application = { sessionId };
         }
-        const documentTypes = ['SLI_01', 'SLI_02', 'RESUME', 'ACCEPTANCE_LETTER'];
+        const documentTypes = ['SLI_01', 'SLI_03', 'SLI_04', 'BLI_02', 'BLI_03', 'BLI_04', 'DLI_01', 'OFFER_LETTER'];
         const stats = [];
         for (const type of documentTypes) {
             const total = await this.prisma.document.count({
@@ -276,7 +375,32 @@ let ReportsService = class ReportsService {
             const approved = await this.prisma.document.count({
                 where: Object.assign(Object.assign({}, whereClause), { type, status: client_1.DocumentStatus.SIGNED }),
             });
-            const revisions = await this.prisma.document.count({
+            const documentsWithChangeRequests = await this.prisma.document.findMany({
+                where: Object.assign(Object.assign({}, whereClause), { type }),
+                include: {
+                    application: {
+                        include: {
+                            reviews: {
+                                where: {
+                                    decision: 'REQUEST_CHANGES',
+                                },
+                                orderBy: {
+                                    decidedAt: 'desc',
+                                },
+                                take: 1,
+                            },
+                        },
+                    },
+                },
+            });
+            const changeRequests = documentsWithChangeRequests.filter(doc => {
+                if (doc.application.reviews.length === 0 || doc.status === client_1.DocumentStatus.SIGNED) {
+                    return false;
+                }
+                const latestReview = doc.application.reviews[0];
+                return doc.updatedAt <= latestReview.decidedAt;
+            }).length;
+            const pendingApproval = await this.prisma.document.count({
                 where: Object.assign(Object.assign({}, whereClause), { type, status: client_1.DocumentStatus.PENDING_SIGNATURE }),
             });
             const rejected = await this.prisma.document.count({
@@ -302,7 +426,8 @@ let ReportsService = class ReportsService {
                 type: displayType,
                 total,
                 approved,
-                revisions,
+                pendingApproval,
+                changeRequests,
                 rejected,
                 avgReviewTime: parseFloat(avgReviewTime.toFixed(1)),
             });
@@ -349,6 +474,101 @@ let ReportsService = class ReportsService {
             reviewed: data.reviewed,
             avgTime: data.reviewed > 0 ? parseFloat((data.totalTime / data.reviewed).toFixed(1)) : 0,
         }));
+    }
+    async getStudentProgress(sessionId) {
+        const whereClause = {};
+        if (sessionId) {
+            whereClause.sessionId = sessionId;
+        }
+        const studentSessions = await this.prisma.studentSession.findMany({
+            where: whereClause,
+            include: {
+                user: {
+                    include: {
+                        applications: {
+                            where: sessionId ? { sessionId } : {},
+                            include: {
+                                documents: true,
+                                formResponses: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        const students = studentSessions.map((ss) => {
+            const student = ss.user;
+            const application = student.applications[0];
+            let status = 'Not Started';
+            let progress = 0;
+            let completedSteps = 0;
+            const totalSteps = 5;
+            if (!application) {
+                status = 'Not Started';
+                progress = 0;
+            }
+            else if (application.status === 'DRAFT') {
+                status = 'Not Started';
+                progress = 0;
+            }
+            else if (application.status === 'SUBMITTED' || application.status === 'UNDER_REVIEW') {
+                status = 'Application Submitted';
+                const hasBLI01 = application.formResponses.some(form => form.formTypeEnum === 'BLI_01');
+                const hasBLI02 = application.documents.some(doc => doc.type === 'BLI_02');
+                const hasBLI03Online = application.formResponses.some(form => form.formTypeEnum === 'BLI_03');
+                const hasBLI03Hardcopy = application.documents.some(doc => doc.type === 'BLI_03_HARDCOPY');
+                const hasBLI04 = application.documents.some(doc => doc.type === 'BLI_04');
+                completedSteps = [hasBLI01, hasBLI02, hasBLI03Online, hasBLI03Hardcopy, hasBLI04].filter(Boolean).length;
+                progress = Math.round((completedSteps / totalSteps) * 100);
+            }
+            else if (application.status === 'APPROVED') {
+                const hasBLI04 = application.documents.some(doc => doc.type === 'BLI_04' && doc.status === client_1.DocumentStatus.SIGNED);
+                if (hasBLI04) {
+                    status = 'Completed';
+                }
+                else {
+                    status = 'Approved & Ongoing';
+                }
+                const hasBLI01 = application.formResponses.some(form => form.formTypeEnum === 'BLI_01');
+                const hasBLI02 = application.documents.some(doc => doc.type === 'BLI_02');
+                const hasBLI03Online = application.formResponses.some(form => form.formTypeEnum === 'BLI_03');
+                const hasBLI03Hardcopy = application.documents.some(doc => doc.type === 'BLI_03_HARDCOPY');
+                const hasBLI04Doc = application.documents.some(doc => doc.type === 'BLI_04');
+                completedSteps = [hasBLI01, hasBLI02, hasBLI03Online, hasBLI03Hardcopy, hasBLI04Doc].filter(Boolean).length;
+                progress = Math.round((completedSteps / totalSteps) * 100);
+            }
+            else if (application.status === 'REJECTED' || application.status === 'CANCELLED') {
+                status = 'Not Started';
+                progress = 0;
+            }
+            return {
+                id: student.id,
+                name: student.name,
+                matricNo: student.matricNo,
+                program: student.program,
+                status,
+                progress,
+                completedSteps,
+                totalSteps,
+                applicationStatus: (application === null || application === void 0 ? void 0 : application.status) || null,
+                documents: (application === null || application === void 0 ? void 0 : application.documents) || [],
+                formResponses: (application === null || application === void 0 ? void 0 : application.formResponses) || [],
+            };
+        });
+        const notStarted = students.filter(s => s.status === 'Not Started').length;
+        const submitted = students.filter(s => s.status === 'Application Submitted').length;
+        const ongoing = students.filter(s => s.status === 'Approved & Ongoing').length;
+        const completed = students.filter(s => s.status === 'Completed').length;
+        return {
+            students,
+            summary: {
+                notStarted,
+                submitted,
+                ongoing,
+                completed,
+                total: students.length,
+            },
+        };
     }
 };
 exports.ReportsService = ReportsService;
